@@ -111,6 +111,7 @@
     <ClInclude Include="src\core\freeze_watchdog.h" />
     <ClInclude Include="src\core\sim_heartbeat_hook.h" />
     <ClInclude Include="src\core\cursor_hook.h" />
+    <ClInclude Include="src\core\crash_capture.h" />
     <ClInclude Include="src\util\logger.h" />
     <ClInclude Include="src\util\memory.h" />
     <ClInclude Include="src\util\paths.h" />
@@ -122,6 +123,7 @@
     <ClCompile Include="src\core\freeze_watchdog.cpp" />
     <ClCompile Include="src\core\sim_heartbeat_hook.cpp" />
     <ClCompile Include="src\core\cursor_hook.cpp" />
+    <ClCompile Include="src\core\crash_capture.cpp" />
     <ClCompile Include="src\util\memory.cpp" />
     <ClCompile Include="src\util\paths.cpp" />
   </ItemGroup>

@@ -21,6 +21,7 @@
 #include "core/addresses.h"
 #include "core/freeze_watchdog.h"
 #include "core/sim_heartbeat_hook.h"
+#include "core/crash_capture.h"
 #include <Windows.h>
 #include <string>
 
@@ -46,6 +47,12 @@ DWORD WINAPI MainThread(LPVOID /*lpParam*/) {
     LOG_INFO("===========================================");
     LOG_INFO("Sims3FreezeCursor - starting up");
     LOG_INFO("===========================================");
+
+    // CRASH CAPTURE - installed before anything else below (Addresses'
+    // pattern scan, the sim-heartbeat Detours hook, FreezeWatchdog's poll
+    // loop) so a fault during our OWN startup gets captured too, not just
+    // ones during normal play. See crash_capture.h for why this exists.
+    CrashCapture::Get().Initialize();
 
     // FREEZE WATCHDOG - starts immediately; independent of Addresses/hooks,
     // so it's running (and can already report "no heartbeat yet") for as

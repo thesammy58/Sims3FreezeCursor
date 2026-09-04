@@ -23,6 +23,7 @@
 #include "core/sim_heartbeat_hook.h"
 #include "core/crash_capture.h"
 #include "core/glib_hash_guard.h"
+#include "core/context_guard.h"
 #include <Windows.h>
 #include <string>
 
@@ -60,6 +61,11 @@ DWORD WINAPI MainThread(LPVOID /*lpParam*/) {
     // where EDI is the table's own key_equal_func. Validating that pointer
     // before the call is two reads and two compares; see glib_hash_guard.h.
     GLibHashGuard::Initialize();
+
+    // CONTEXT GUARD - ECX and EDX are volatile yet byte-identical across all
+    // eight captures, which execution cannot produce. Only a whole-CONTEXT
+    // restore loads the entire register file at once. See context_guard.h.
+    ContextGuard::Initialize();
 
     // FREEZE WATCHDOG - starts immediately; independent of Addresses/hooks,
     // so it's running (and can already report "no heartbeat yet") for as

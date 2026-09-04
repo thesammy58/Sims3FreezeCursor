@@ -296,6 +296,14 @@ void ReportDetailFault() {
     LOG_ERROR("[CrashCapture]   (detail dump faulted - capture truncated here; the registers above are still valid)");
 }
 
+// Static, not a stack local: when ESP is broken the handler's own frame lives
+// on whatever sliver of memory ESP points at, and the worker thread below has
+// to read this from somewhere that is definitely valid. The s_inHandler guard
+// means only one capture is ever in flight, so a single instance is enough.
+CaptureCtx g_cap;
+
+DWORD WINAPI DetailThreadProc(LPVOID param);
+
 // POD-only frame, so __try has nothing to unwind. A secondary fault while
 // dumping is swallowed and the capture closes cleanly instead of losing every
 // line that had not been flushed yet.
@@ -305,6 +313,11 @@ void SafeRunDetails(const CaptureCtx* c) {
     } __except (EXCEPTION_EXECUTE_HANDLER) {
         ReportDetailFault();
     }
+}
+
+DWORD WINAPI DetailThreadProc(LPVOID param) {
+    SafeRunDetails(reinterpret_cast<const CaptureCtx*>(param));
+    return 0;
 }
 
 } // namespace
@@ -380,7 +393,7 @@ LONG CALLBACK CrashCapture::VectoredHandler(PEXCEPTION_POINTERS exInfo) {
     LOG_ERROR("[CrashCapture]   EIP=" + ToHex(eip) + " EFlags=" + ToHex(ctx->EFlags));
 
     if (esp % 4 != 0) {
-        LOG_ERROR("[CrashCapture]   *** ESP IS MISALIGNED (not a multiple of 4) *** - proof the CPU was already executing non-code bytes as instructions before this fault. The real corruption happened earlier; this fault site is a symptom, not the cause.");
+        LOG_ERROR("[CrashCapture]   *** ESP IS MISALIGNED (not a multiple of 4) *** - no compiled PUSH/POP/CALL/RET sequence can produce this. Note this does NOT by itself mean garbage was executed: where EIP lands in RESERVE or unmapped memory, nothing ran there and ESP was ALREADY broken when control transferred - which is what a longjmp into a bad jmp_buf looks like, since it restores ESP and EIP together.");
     }
 
     // THE REAL STACK - every scan before this one started from ESP, and on
@@ -393,21 +406,31 @@ LONG CALLBACK CrashCapture::VectoredHandler(PEXCEPTION_POINTERS exInfo) {
     const bool espOnStack = (stackLimit && esp >= stackLimit && esp < stackBase);
     LOG_ERROR("[CrashCapture]   Thread stack: limit=" + ToHex(stackLimit) + " base=" + ToHex(stackBase) + "  ESP is " + (espOnStack ? "INSIDE the real stack" : "*** OUTSIDE the real stack ***"));
 
-    // Named 'cap', not 'ctx' - 'ctx' is already the PCONTEXT register context above.
-    CaptureCtx cap;
-    cap.eip = eip;
-    cap.esp = esp;
-    cap.ebp = ebp;
-    cap.faultAddr = faultAddr;
-    cap.stackBase = stackBase;
-    cap.stackLimit = stackLimit;
-    cap.espOnStack = espOnStack;
+    g_cap.eip = eip;
+    g_cap.esp = esp;
+    g_cap.ebp = ebp;
+    g_cap.faultAddr = faultAddr;
+    g_cap.stackBase = stackBase;
+    g_cap.stackLimit = stackLimit;
+    g_cap.espOnStack = espOnStack;
 
-    // The probes below are individually guarded, but the formatting and file
-    // I/O around them can still fault when the heap is damaged - which is
-    // exactly what truncated the 11:26:11 capture. Isolating the whole block
-    // means a secondary fault ends the detail dump instead of losing it.
-    SafeRunDetails(&cap);
+    // A VEH runs on the FAULTING thread, so when ESP is off the rails this
+    // handler is executing on it too - with however little valid memory
+    // happens to sit under that pointer. That is what truncated the 11:26:11
+    // and 12:07:20 captures partway through the dump, and it costs us exactly
+    // the evidence we need. Hand the work to a thread with a real 1MB stack
+    // and wait for it.
+    if (espOnStack) {
+        SafeRunDetails(&g_cap);
+    } else {
+        HANDLE h = CreateThread(nullptr, 0, DetailThreadProc, &g_cap, 0, nullptr);
+        if (h) {
+            WaitForSingleObject(h, 15000);
+            CloseHandle(h);
+        } else {
+            SafeRunDetails(&g_cap); // no thread - try in place and hope
+        }
+    }
 
     LOG_ERROR("=====================================================");
 

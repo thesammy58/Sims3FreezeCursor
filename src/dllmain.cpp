@@ -22,8 +22,6 @@
 #include "core/freeze_watchdog.h"
 #include "core/sim_heartbeat_hook.h"
 #include "core/crash_capture.h"
-#include "core/glib_hash_guard.h"
-#include "core/context_guard.h"
 #include <Windows.h>
 #include <string>
 
@@ -55,17 +53,6 @@ DWORD WINAPI MainThread(LPVOID /*lpParam*/) {
     // loop) so a fault during our OWN startup gets captured too, not just
     // ones during normal play. See crash_capture.h for why this exists.
     CrashCapture::Get().Initialize();
-
-    // GLIB HASH GUARD - the one instruction every crash in this investigation
-    // derails through is `call edi` inside TS3's g_hash_table_lookup_extended,
-    // where EDI is the table's own key_equal_func. Validating that pointer
-    // before the call is two reads and two compares; see glib_hash_guard.h.
-    GLibHashGuard::Initialize();
-
-    // CONTEXT GUARD - ECX and EDX are volatile yet byte-identical across all
-    // eight captures, which execution cannot produce. Only a whole-CONTEXT
-    // restore loads the entire register file at once. See context_guard.h.
-    ContextGuard::Initialize();
 
     // FREEZE WATCHDOG - starts immediately; independent of Addresses/hooks,
     // so it's running (and can already report "no heartbeat yet") for as

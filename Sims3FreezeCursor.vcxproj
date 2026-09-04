@@ -112,8 +112,6 @@
     <ClInclude Include="src\core\sim_heartbeat_hook.h" />
     <ClInclude Include="src\core\cursor_hook.h" />
     <ClInclude Include="src\core\crash_capture.h" />
-    <ClInclude Include="src\core\glib_hash_guard.h" />
-    <ClInclude Include="src\core\context_guard.h" />
     <ClInclude Include="src\util\logger.h" />
     <ClInclude Include="src\util\memory.h" />
     <ClInclude Include="src\util\paths.h" />
@@ -126,8 +124,6 @@
     <ClCompile Include="src\core\sim_heartbeat_hook.cpp" />
     <ClCompile Include="src\core\cursor_hook.cpp" />
     <ClCompile Include="src\core\crash_capture.cpp" />
-    <ClCompile Include="src\core\glib_hash_guard.cpp" />
-    <ClCompile Include="src\core\context_guard.cpp" />
     <ClCompile Include="src\util\memory.cpp" />
     <ClCompile Include="src\util\paths.cpp" />
   </ItemGroup>

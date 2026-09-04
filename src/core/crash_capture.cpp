@@ -331,9 +331,19 @@ CrashCapture& CrashCapture::Get() {
 bool CrashCapture::Initialize() {
     if (m_vehHandle) return true;
 
-    m_vehHandle = AddVectoredExceptionHandler(1, VectoredHandler);
+    // LAST in the chain, not first.
+    //
+    // The `1` here would mean front-of-chain. That is wrong for a passive
+    // observer: S3MM's VEH RECOVERS from a specific interpreter fault by
+    // rewinding EIP and returning EXCEPTION_CONTINUE_EXECUTION, and its own
+    // notes say that fires every tick for hooked methods. In front we would
+    // log alarming FAULT blocks for exceptions somebody else handles cleanly
+    // and the game survives. Registering last means a fault only reaches us
+    // once every recovery handler has declined it - which is exactly the set
+    // of faults worth reporting.
+    m_vehHandle = AddVectoredExceptionHandler(0, VectoredHandler);
     if (m_vehHandle) {
-        LOG_INFO("[CrashCapture] Installed process-wide VEH crash capture");
+        LOG_INFO("[CrashCapture] Installed VEH crash capture (last in chain, so faults another mod recovers from are not reported)");
     } else {
         LOG_WARN("[CrashCapture] AddVectoredExceptionHandler failed");
     }

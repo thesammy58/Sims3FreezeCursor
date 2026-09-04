@@ -393,20 +393,21 @@ LONG CALLBACK CrashCapture::VectoredHandler(PEXCEPTION_POINTERS exInfo) {
     const bool espOnStack = (stackLimit && esp >= stackLimit && esp < stackBase);
     LOG_ERROR("[CrashCapture]   Thread stack: limit=" + ToHex(stackLimit) + " base=" + ToHex(stackBase) + "  ESP is " + (espOnStack ? "INSIDE the real stack" : "*** OUTSIDE the real stack ***"));
 
-    CaptureCtx ctx;
-    ctx.eip = eip;
-    ctx.esp = esp;
-    ctx.ebp = ebp;
-    ctx.faultAddr = faultAddr;
-    ctx.stackBase = stackBase;
-    ctx.stackLimit = stackLimit;
-    ctx.espOnStack = espOnStack;
+    // Named 'cap', not 'ctx' - 'ctx' is already the PCONTEXT register context above.
+    CaptureCtx cap;
+    cap.eip = eip;
+    cap.esp = esp;
+    cap.ebp = ebp;
+    cap.faultAddr = faultAddr;
+    cap.stackBase = stackBase;
+    cap.stackLimit = stackLimit;
+    cap.espOnStack = espOnStack;
 
     // The probes below are individually guarded, but the formatting and file
     // I/O around them can still fault when the heap is damaged - which is
     // exactly what truncated the 11:26:11 capture. Isolating the whole block
     // means a secondary fault ends the detail dump instead of losing it.
-    SafeRunDetails(&ctx);
+    SafeRunDetails(&cap);
 
     LOG_ERROR("=====================================================");
 

@@ -25,5 +25,14 @@ namespace GLibHashGuard {
 // rather than patched blindly.
 bool Initialize();
 
+// RECURSION DEPTH - the lookup is the pivot of a recursive cycle (hash lookup
+// -> key_equal_func -> generic-instantiation compare -> another lookup). The
+// real-stack scans show that cycle repeating for ~169KB of stack right up to
+// the crash. These let CrashCapture report how deep the thread actually was,
+// and the high-water mark for the run, so "legitimately deep" can be told
+// apart from "runaway".
+int CurrentDepth();
+int MaxDepth();
+
 } // namespace GLibHashGuard
 } // namespace S3FC

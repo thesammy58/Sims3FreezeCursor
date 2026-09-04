@@ -48,6 +48,10 @@ uintptr_t s_ts3End = 0;
 volatile LONG s_reportCount = 0;
 volatile LONG s_blockedCount = 0;
 
+// Per-thread nesting depth of the lookup, plus a process-wide high-water mark.
+thread_local int t_depth = 0;
+volatile LONG s_maxDepth = 0;
+
 bool IsTs3Code(uintptr_t a) { return a >= s_ts3Base && a < s_ts3End; }
 
 // POD-only frames for anything that dereferences the table - it may be freed.
@@ -126,7 +130,15 @@ int __cdecl HookedHashLookup(void* table, void* key, void** outKey, void** outVa
             }
         }
     }
-    return s_original(table, key, outKey, outValue);
+    // Depth accounting around the real call. Two increments and a compare on a
+    // hot path; the high-water mark is only touched when it actually rises.
+    const int depth = ++t_depth;
+    if (depth > s_maxDepth) { InterlockedExchange(&s_maxDepth, depth); }
+
+    const int r = s_original(table, key, outKey, outValue);
+
+    --t_depth;
+    return r;
 }
 
 } // namespace
@@ -168,6 +180,9 @@ bool Initialize() {
     LOG_INFO("[GLibHashGuard] Watching g_hash_table_lookup_extended @ " + ToHex(kHashLookup) + " (TS3 code range " + ToHex(s_ts3Base) + ".." + ToHex(s_ts3End) + ", corrupt lookups " + (kBlockCorruptLookups ? "DROPPED" : "logged only") + ")");
     return true;
 }
+
+int CurrentDepth() { return t_depth; }
+int MaxDepth() { return (int)s_maxDepth; }
 
 } // namespace GLibHashGuard
 } // namespace S3FC

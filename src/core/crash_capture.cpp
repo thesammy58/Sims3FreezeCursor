@@ -1,6 +1,7 @@
 #include "crash_capture.h"
 #include <cstdint>
 #include "../util/logger.h"
+#include "glib_hash_guard.h"
 #include <Psapi.h>
 #include <intrin.h>
 #include <string>
@@ -405,6 +406,12 @@ LONG CALLBACK CrashCapture::VectoredHandler(PEXCEPTION_POINTERS exInfo) {
     GetThreadStackBounds(&stackBase, &stackLimit);
     const bool espOnStack = (stackLimit && esp >= stackLimit && esp < stackBase);
     LOG_ERROR("[CrashCapture]   Thread stack: limit=" + ToHex(stackLimit) + " base=" + ToHex(stackBase) + "  ESP is " + (espOnStack ? "INSIDE the real stack" : "*** OUTSIDE the real stack ***"));
+
+    // Depth of the hash-lookup recursion this thread was sitting in. The
+    // real-stack scans show that cycle running ~169KB deep at every crash; if
+    // this is bounded and similar run to run it is legitimate nesting, and if
+    // it climbs without limit it is the bug.
+    LOG_ERROR("[CrashCapture]   GLib hash-lookup recursion: depth on THIS thread=" + std::to_string(GLibHashGuard::CurrentDepth()) + ", high-water this run=" + std::to_string(GLibHashGuard::MaxDepth()));
 
     g_cap.eip = eip;
     g_cap.esp = esp;

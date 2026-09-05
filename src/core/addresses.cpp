@@ -101,15 +101,21 @@ bool Initialize() {
     }
 
     // Whatever we settled on, never hand a detour an address outside the image.
-    // CASE 4 - they disagree and the documented address is NOT hooked. Most
-    // likely a genuinely different game build where the function really did
-    // move, so the scan is the better source. Loud, because it is unproven.
     if (!IsWithinMainModule(scanned)) {
         LOG_ERROR("[Addresses] Pattern scan matched " + ToHex(scanned) + ", which is outside the main module - refusing to hook it.");
         return false;
     }
+
+    // CASE 4 - they disagree and the documented address is NOT hooked, so this
+    // build simply has the function somewhere else. INFO, not WARN: the scan is
+    // the authoritative mechanism and the constant is a recorded value that goes
+    // stale with every game build - on this install every one of S3MM's recorded
+    // addresses is shifted too. A disagreement here is the expected, healthy
+    // outcome, not a fault, and warning about it on every launch would be
+    // permanent noise about a non-problem. The delta is still logged, because it
+    // is exactly the detail that identified the co-resident hook-ordering bug.
     MonoScriptHost_ProcessTasks = scanned;
-    LOG_WARN("[Addresses] Pattern scan matched " + ToHex(scanned) + ", which disagrees with the documented address " + ToHex(kProcessTasksFallback) + ", and that address is not hooked. Assuming a different game build and trusting the scan - if the sim heartbeat misbehaves, this is the first thing to check.");
+    LOG_INFO("[Addresses] MonoScriptHost::ProcessTasks resolved via pattern scan @ " + ToHex(scanned) + " (documented address " + ToHex(kProcessTasksFallback) + " differs by " + ToHex(scanned - kProcessTasksFallback) + " and is not hooked - this build's addresses are shifted from the recorded ones, which is normal; the scan is authoritative)");
     return true;
 }
 

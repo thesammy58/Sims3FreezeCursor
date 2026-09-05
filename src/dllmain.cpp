@@ -44,9 +44,7 @@ DWORD WINAPI MainThread(LPVOID /*lpParam*/) {
 
     Paths::EnsureDirectoryExists();
     Logger::Get().Initialize(Paths::GetLogPath());
-    LOG_INFO("===========================================");
-    LOG_INFO("Sims3FreezeCursor - starting up");
-    LOG_INFO("===========================================");
+    LOG_INFO("Sims3FreezeCursor starting");
 
     // CRASH CAPTURE - installed before anything else below (Addresses'
     // pattern scan, the sim-heartbeat Detours hook, FreezeWatchdog's poll
@@ -84,7 +82,7 @@ DWORD WINAPI MainThread(LPVOID /*lpParam*/) {
     // (see freeze_watchdog.cpp), so nothing further is needed on this
     // thread.
 
-    LOG_INFO("Initialization complete - watching for sim stalls (threshold " + std::to_string((int)FreezeWatchdog::kStallThresholdSeconds) + "s)");
+    LOG_INFO("Ready - sim stall threshold " + std::to_string((int)FreezeWatchdog::kStallThresholdSeconds) + "s");
     return 0;
 }
 

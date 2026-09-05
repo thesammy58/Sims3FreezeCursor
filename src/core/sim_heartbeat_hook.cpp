@@ -49,7 +49,7 @@ static void __fastcall DetourProcessTasks(void* pHost) {
     if (!IsPlausibleHostPointer(pHost)) {
         LONG n = InterlockedIncrement(&s_badHostCount);
         if (n <= 5) {
-            LOG_ERROR("[SimHeartbeatHook] *** IMPLAUSIBLE pHost on entry: " + ToHex((uintptr_t)pHost) + " (sighting " + std::to_string(n) + ") - this is the bad `this` the crash captures bottom out in. Passing through unchanged; expect a [CrashCapture] block shortly after.");
+            LOG_ERROR("[SimHeartbeatHook] Implausible pHost on entry: " + ToHex((uintptr_t)pHost) + " (sighting " + std::to_string(n) + ") - passed through unchanged; a [CrashCapture] block usually follows.");
         }
     }
 
@@ -90,18 +90,18 @@ bool LooksHooked(uintptr_t addr) {
 void YieldToCoResidentHooks(uintptr_t target) {
     if (!CoResidentMonoModderPresent()) return;
 
-    LOG_INFO("[SimHeartbeatHook] Co-resident Mono modder detected - deferring our hook so its address scan runs against unpatched bytes");
+    LOG_INFO("[SimHeartbeatHook] Co-resident Mono mod detected - deferring install so its address scan sees unpatched bytes");
 
     const DWORD kTimeoutMs = 10000;
     const DWORD start = GetTickCount();
     while (GetTickCount() - start < kTimeoutMs) {
         if (LooksHooked(target)) {
-            LOG_INFO("[SimHeartbeatHook] Co-resident hook appeared at " + ToHex(target) + " after " + std::to_string(GetTickCount() - start) + "ms - attaching on top of it");
+            LOG_INFO("[SimHeartbeatHook] Co-resident hook detected at " + ToHex(target) + " after " + std::to_string(GetTickCount() - start) + "ms - chaining");
             return;
         }
         Sleep(50);
     }
-    LOG_WARN("[SimHeartbeatHook] Waited " + std::to_string(kTimeoutMs) + "ms and no co-resident hook appeared at " + ToHex(target) + " - installing anyway. If that mod resolves this symbol later it may fall back to a stale address.");
+    LOG_WARN("[SimHeartbeatHook] No co-resident hook at " + ToHex(target) + " after " + std::to_string(kTimeoutMs) + "ms - installing. A mod resolving this symbol later may fall back to a stale address.");
 }
 
 namespace SimHeartbeatHook {

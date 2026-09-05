@@ -35,8 +35,6 @@ class Logger {
         m_file.open(filename, std::ios::out | std::ios::trunc);
         m_initialized = m_file.is_open();
 
-        if (m_initialized) { Log(Level::Info, "=== Sims3FreezeCursor Log Started ==="); }
-
         LeaveCriticalSection(&m_cs);
     }
 

@@ -283,7 +283,7 @@ void DumpDetails(const CaptureCtx* c) {
     // the thread's real stack and nowhere near ESP. Walk it from the lowest
     // committed page upward, so the most recent frames report first.
     if (!c->espOnStack && c->stackLimit && c->stackBase > c->stackLimit) {
-        LOG_ERROR("[CrashCapture]   REAL-STACK scan (TEB limit..base, most recent frames first) - this is the call chain ESP-based scans have been missing:");
+        LOG_ERROR("[CrashCapture]   Thread-stack scan (TEB limit..base, most recent frames first):");
         ScanRangeForModulePointers(c->stackLimit, c->stackBase, "stack", c->stackLimit, 60);
     }
 
@@ -293,7 +293,7 @@ void DumpDetails(const CaptureCtx* c) {
 // Kept out of SafeRunDetails: LOG_ERROR builds a std::string, and MSVC rejects
 // __try in any function that has objects requiring unwinding (C2712).
 void ReportDetailFault() {
-    LOG_ERROR("[CrashCapture]   (detail dump faulted - capture truncated here; the registers above are still valid)");
+    LOG_ERROR("[CrashCapture]   Detail dump faulted; output truncated here. Register state above is valid.");
 }
 
 // Static, not a stack local: when ESP is broken the handler's own frame lives
@@ -342,7 +342,7 @@ bool CrashCapture::Initialize() {
     // of faults worth reporting.
     m_vehHandle = AddVectoredExceptionHandler(0, VectoredHandler);
     if (m_vehHandle) {
-        LOG_INFO("[CrashCapture] Installed VEH crash capture (last in chain, so faults another mod recovers from are not reported)");
+        LOG_INFO("[CrashCapture] Installed (VEH, last in chain)");
     } else {
         LOG_WARN("[CrashCapture] AddVectoredExceptionHandler failed");
     }
@@ -353,7 +353,7 @@ void CrashCapture::Shutdown() {
     if (m_vehHandle) {
         RemoveVectoredExceptionHandler(m_vehHandle);
         m_vehHandle = nullptr;
-        LOG_INFO("[CrashCapture] Removed VEH crash capture");
+        LOG_INFO("[CrashCapture] Removed");
     }
 }
 
@@ -372,7 +372,7 @@ LONG CALLBACK CrashCapture::VectoredHandler(PEXCEPTION_POINTERS exInfo) {
 
     LONG count = InterlockedIncrement(&s_captureCount);
     if (count > 5) {
-        if (count == 6) { LOG_ERROR("[CrashCapture] Further full captures suppressed this run (5 already recorded above)"); }
+        if (count == 6) { LOG_ERROR("[CrashCapture] Capture limit reached (5) - further faults will not be logged this run."); }
         InterlockedExchange(&s_inHandler, 0);
         return EXCEPTION_CONTINUE_SEARCH;
     }
@@ -403,7 +403,12 @@ LONG CALLBACK CrashCapture::VectoredHandler(PEXCEPTION_POINTERS exInfo) {
     LOG_ERROR("[CrashCapture]   EIP=" + ToHex(eip) + " EFlags=" + ToHex(ctx->EFlags));
 
     if (esp % 4 != 0) {
-        LOG_ERROR("[CrashCapture]   *** ESP IS MISALIGNED (not a multiple of 4) *** - no compiled PUSH/POP/CALL/RET sequence can produce this. Note this does NOT by itself mean garbage was executed: where EIP lands in RESERVE or unmapped memory, nothing ran there and ESP was ALREADY broken when control transferred - which is what a longjmp into a bad jmp_buf looks like, since it restores ESP and EIP together.");
+        // No compiled PUSH/POP/CALL/RET sequence can leave ESP unaligned, so the
+        // stack pointer was written by something other than normal call/return
+        // flow. On its own this does not prove garbage was executed: if EIP is in
+        // RESERVE or unmapped memory then nothing ran there, and ESP was already
+        // wrong when control transferred.
+        LOG_ERROR("[CrashCapture]   ESP is misaligned (not a multiple of 4) - stack pointer was not set by normal call/return flow.");
     }
 
     // THE REAL STACK - every scan before this one started from ESP, and on
@@ -414,7 +419,7 @@ LONG CALLBACK CrashCapture::VectoredHandler(PEXCEPTION_POINTERS exInfo) {
     uintptr_t stackBase = 0, stackLimit = 0;
     GetThreadStackBounds(&stackBase, &stackLimit);
     const bool espOnStack = (stackLimit && esp >= stackLimit && esp < stackBase);
-    LOG_ERROR("[CrashCapture]   Thread stack: limit=" + ToHex(stackLimit) + " base=" + ToHex(stackBase) + "  ESP is " + (espOnStack ? "INSIDE the real stack" : "*** OUTSIDE the real stack ***"));
+    LOG_ERROR("[CrashCapture]   Thread stack: limit=" + ToHex(stackLimit) + " base=" + ToHex(stackBase) + " - ESP is " + (espOnStack ? "within bounds" : "OUT OF BOUNDS"));
 
 
     g_cap.eip = eip;

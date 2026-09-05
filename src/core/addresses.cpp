@@ -74,11 +74,11 @@ bool Initialize() {
     // whatever happens to live at that address.
     if (scanned == 0) {
         if (!FallbackLooksPlausible(kProcessTasksFallback)) {
-            LOG_ERROR("[Addresses] Pattern scan found no match AND the documented address " + ToHex(kProcessTasksFallback) + " holds neither the expected prologue nor a detour jump - this is a different game build. Refusing to hook a guessed address; freeze detection is unavailable this run.");
+            LOG_ERROR("[Addresses] MonoScriptHost::ProcessTasks not found. Pattern scan failed and fallback " + ToHex(kProcessTasksFallback) + " holds neither the expected prologue nor a detour jump - unrecognised game build. Not hooking; freeze detection disabled.");
             return false;
         }
         MonoScriptHost_ProcessTasks = kProcessTasksFallback;
-        LOG_WARN("[Addresses] Pattern scan found no match (another mod hooked it first) - using documented address " + ToHex(kProcessTasksFallback) + ", verified present");
+        LOG_WARN("[Addresses] Pattern scan found no match (already detoured by another mod). Using fallback " + ToHex(kProcessTasksFallback) + " - prologue verified.");
         return true;
     }
 
@@ -96,13 +96,13 @@ bool Initialize() {
     if (fallbackHooked) {
         MonoScriptHost_ProcessTasks = kProcessTasksFallback;
 
-        LOG_WARN("[Addresses] Pattern scan matched " + ToHex(scanned) + " but the documented address " + ToHex(kProcessTasksFallback) + " already holds a detour jump - the function has not moved, the scan hit a false positive " + ToHex(scanned - kProcessTasksFallback) + " bytes past it. Using the documented address; hooking the scan result would inject a jump into the wrong code.");
+        LOG_WARN("[Addresses] Pattern matched " + ToHex(scanned) + ", but fallback " + ToHex(kProcessTasksFallback) + " is already detoured - scan hit a false positive " + ToHex(scanned - kProcessTasksFallback) + " bytes past the real entry. Using " + ToHex(kProcessTasksFallback) + ".");
         return true;
     }
 
     // Whatever we settled on, never hand a detour an address outside the image.
     if (!IsWithinMainModule(scanned)) {
-        LOG_ERROR("[Addresses] Pattern scan matched " + ToHex(scanned) + ", which is outside the main module - refusing to hook it.");
+        LOG_ERROR("[Addresses] Pattern matched " + ToHex(scanned) + ", outside the main module. Not hooking.");
         return false;
     }
 
@@ -115,7 +115,7 @@ bool Initialize() {
     // permanent noise about a non-problem. The delta is still logged, because it
     // is exactly the detail that identified the co-resident hook-ordering bug.
     MonoScriptHost_ProcessTasks = scanned;
-    LOG_INFO("[Addresses] MonoScriptHost::ProcessTasks resolved via pattern scan @ " + ToHex(scanned) + " (documented address " + ToHex(kProcessTasksFallback) + " differs by " + ToHex(scanned - kProcessTasksFallback) + " and is not hooked - this build's addresses are shifted from the recorded ones, which is normal; the scan is authoritative)");
+    LOG_INFO("[Addresses] MonoScriptHost::ProcessTasks @ " + ToHex(scanned) + " (pattern scan; fallback " + ToHex(kProcessTasksFallback) + " differs by " + ToHex(scanned - kProcessTasksFallback) + " - addresses vary by game build)");
     return true;
 }
 

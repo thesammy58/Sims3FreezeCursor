@@ -52,9 +52,9 @@ HCURSOR GetBusyCursor() {
         s_loadAttempted = true;
         s_busyCursor = LoadCursor(GetModuleHandle(nullptr), MAKEINTRESOURCE(103));
         if (s_busyCursor) {
-            LOG_INFO("[CursorHook] Loaded TS3.exe's built-in busy cursor (resource 103) for the freeze indicator");
+            LOG_INFO("[CursorHook] Loaded busy cursor (TS3.exe resource 103)");
         } else {
-            LOG_WARN("[CursorHook] Failed to load TS3.exe's built-in busy cursor (resource 103, " + ToHex(GetLastError()) + ") - stalls will have no visible cursor indicator, since a generic Windows cursor must never be shown for a mere sim stall");
+            LOG_WARN("[CursorHook] Busy cursor (resource 103) failed to load, error " + ToHex(GetLastError()) + " - stalls will show no cursor change.");
         }
     }
     return s_busyCursor;

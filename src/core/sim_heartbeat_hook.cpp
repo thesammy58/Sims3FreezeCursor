@@ -35,7 +35,7 @@ static void __fastcall DetourProcessTasks(void* pHost) {
     // Simulate() later hangs without yielding, Simulate() never returns and
     // this detour is never re-entered next frame either way, so the
     // heartbeat correctly goes stale in both cases. See freeze_watchdog.h.
-    FreezeWatchdog::Get().OnSimHeartbeat();
+    SimHeartbeat();
 
     // BAD-THIS TRIPWIRE - every crash captured so far bottoms out with
     // ECX = 0xFFFFFFFF and EBP left pointing at a TS3.exe vtable in .rdata.

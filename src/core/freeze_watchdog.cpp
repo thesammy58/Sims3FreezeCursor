@@ -7,6 +7,8 @@
 
 namespace S3FC {
 
+volatile LONG g_simHeartbeatTicks = 0;
+
 FreezeWatchdog& FreezeWatchdog::Get() {
     static FreezeWatchdog instance;
     return instance;
@@ -47,13 +49,6 @@ void FreezeWatchdog::Shutdown() {
     LOG_INFO("[FreezeWatchdog] Watchdog thread stopped");
 }
 
-void FreezeWatchdog::OnSimHeartbeat() {
-    LARGE_INTEGER now;
-    QueryPerformanceCounter(&now);
-    m_lastSimHeartbeatQpc.store(now.QuadPart, std::memory_order_relaxed);
-    m_heartbeatCount.fetch_add(1, std::memory_order_relaxed);
-}
-
 DWORD WINAPI FreezeWatchdog::ThreadProc(LPVOID param) {
     reinterpret_cast<FreezeWatchdog*>(param)->PollLoop();
     return 0;
@@ -68,11 +63,18 @@ void FreezeWatchdog::PollLoop() {
     // exact shape of a report that cannot be acted on.
     const int statsSeconds = Config::HeartbeatStatsSeconds();
     DWORD windowStartMs = GetTickCount();
-    uint64_t windowStartBeats = m_heartbeatCount.load(std::memory_order_relaxed);
+    LONG windowStartTicks = g_simHeartbeatTicks;
     long windowStartMessages = CursorHook::SetCursorMessages();
     long windowStartSwaps = CursorHook::CursorSwaps();
     double windowWorstGap = 0.0;
     unsigned windowStallEntries = 0;
+
+    // The watchdog owns the clock (see freeze_watchdog.h). It samples the
+    // counter the detour bumps and timestamps only the changes, so the sim
+    // thread never reads a clock at all.
+    LONG lastSeenTicks = g_simHeartbeatTicks;
+    int64_t lastChangeQpc = 0;
+    bool everFired = false;
 
     // The game window may not exist yet this early (created partway through
     // TS3's own startup) - retry every poll interval until CursorHook
@@ -86,11 +88,19 @@ void FreezeWatchdog::PollLoop() {
         LARGE_INTEGER now;
         QueryPerformanceCounter(&now);
 
-        int64_t last = m_lastSimHeartbeatQpc.load(std::memory_order_relaxed);
+        const LONG ticks = g_simHeartbeatTicks;
+        if (ticks != lastSeenTicks) {
+            lastSeenTicks = ticks;
+            lastChangeQpc = now.QuadPart;
+            everFired = true;
+        }
+
+        // "Never fired yet" is not the same as "stale" - before the first
+        // heartbeat arrives there is nothing to be late.
         double simStalled = 0.0;
-        if (last != 0) {
-            int64_t delta = now.QuadPart - last;
-            if (delta < 0) delta = 0; // guard against QueryPerformanceCounter/TSC weirdness across cores
+        if (everFired) {
+            int64_t delta = now.QuadPart - lastChangeQpc;
+            if (delta < 0) delta = 0; // guard against QPC/TSC weirdness across cores
             simStalled = (double)delta / (double)m_qpcFrequency;
         }
 
@@ -108,20 +118,20 @@ void FreezeWatchdog::PollLoop() {
         if (statsSeconds > 0) {
             const DWORD elapsedMs = GetTickCount() - windowStartMs;
             if (elapsedMs >= static_cast<DWORD>(statsSeconds) * 1000) {
-                const uint64_t beats = m_heartbeatCount.load(std::memory_order_relaxed) - windowStartBeats;
+                const LONG beats = g_simHeartbeatTicks - windowStartTicks;
                 const double rate = elapsedMs ? (beats * 1000.0 / elapsedMs) : 0.0;
                 const long messages = CursorHook::SetCursorMessages() - windowStartMessages;
                 const long swaps = CursorHook::CursorSwaps() - windowStartSwaps;
 
                 char line[256];
                 sprintf_s(line,
-                          "[FreezeWatchdog] %lums: pump %llu calls (%.1f/s), worst gap %.3fs, %u stalls, %ld WM_SETCURSOR, %ld cursor swaps",
-                          static_cast<unsigned long>(elapsedMs), static_cast<unsigned long long>(beats), rate,
+                          "[FreezeWatchdog] %lums: pump %ld calls (%.1f/s), worst gap %.3fs, %u stalls, %ld WM_SETCURSOR, %ld cursor swaps",
+                          static_cast<unsigned long>(elapsedMs), static_cast<long>(beats), rate,
                           windowWorstGap, windowStallEntries, messages, swaps);
                 LOG_INFO(line);
 
                 windowStartMs = GetTickCount();
-                windowStartBeats = m_heartbeatCount.load(std::memory_order_relaxed);
+                windowStartTicks = g_simHeartbeatTicks;
                 windowStartMessages = CursorHook::SetCursorMessages();
                 windowStartSwaps = CursorHook::CursorSwaps();
                 windowWorstGap = 0.0;

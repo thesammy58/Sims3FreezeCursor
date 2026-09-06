@@ -27,6 +27,36 @@ namespace S3FC {
 //     look identical at the cursor (busy), so there's nothing to gate.
 //   - No StuckCallTracker poll - that's a livelock/true-hang classifier
 //     that only matters for deciding what a dialog should say.
+// SIM HEARTBEAT COUNTER - bumped by the ProcessTasks detour, on the sim
+// thread, once per call.
+//
+// Deliberately a bare counter at namespace scope, and deliberately NOT a
+// timestamp. The first version of this called QueryPerformanceCounter in the
+// detour. On most machines that is a ~20ns RDTSC read - but when Windows
+// cannot use the TSC as its QPC source it falls back to the HPET or the ACPI
+// power-management timer, and the same call becomes a hardware bus read
+// costing one to three MICROSECONDS. Which one a player gets depends on
+// their chipset, firmware and BCD settings, not on anything visible from
+// here. On a task pump that drains its queue in bursts, that difference is
+// the difference between a hook nobody can measure and a visible hitch
+// several times a second.
+//
+// Nor is it FreezeWatchdog::Get().OnSimHeartbeat() any more: that accessor
+// is a function-local static, so every single call paid a guard load and a
+// call through it before doing any work.
+//
+// The hot path is now one increment. The watchdog thread polls at 150ms and
+// owns the clock - "this number stopped moving", plus a timestamp taken on
+// the watchdog's own thread, is all the stall detector ever needed. It costs
+// 150ms of granularity against a one-second threshold, which the log was
+// already quantised to anyway.
+//
+// A lost increment from a torn read does not matter: nothing reads the
+// value, only whether it changed.
+extern volatile LONG g_simHeartbeatTicks;
+
+inline void SimHeartbeat() { ++g_simHeartbeatTicks; }
+
 enum class WatchdogState : int {
     Ok = 0,  // sim heartbeat fresh
     Stalled, // sim heartbeat stale (>= kStallThresholdSeconds)
@@ -41,10 +71,6 @@ class FreezeWatchdog {
     // stays Ok; "never fired" is not the same as "stale").
     bool Initialize();
     void Shutdown();
-
-    // Called from the MonoScriptHost::ProcessTasks detour, once per sim
-    // frame under normal operation (see sim_heartbeat_hook.cpp).
-    void OnSimHeartbeat();
 
     // Polled by CursorHook. Lock-free, safe from any thread.
     WatchdogState GetState() const { return m_state.load(std::memory_order_relaxed); }
@@ -66,13 +92,6 @@ class FreezeWatchdog {
     std::atomic<bool> m_initialized{false};
     std::atomic<bool> m_stopRequested{false};
     HANDLE m_threadHandle = nullptr;
-
-    // QueryPerformanceCounter ticks. 0 means "never fired yet".
-    std::atomic<int64_t> m_lastSimHeartbeatQpc{0};
-
-    // Total heartbeats since startup. Only ever read as a difference between
-    // two samples, so wrapping is not a concern.
-    std::atomic<uint64_t> m_heartbeatCount{0};
 
     std::atomic<WatchdogState> m_state{WatchdogState::Ok};
 

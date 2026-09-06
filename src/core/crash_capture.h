@@ -46,7 +46,21 @@ class CrashCapture {
     bool Initialize();
     void Shutdown();
 
+    // Called from the watchdog thread each poll. Once the capture budget is
+    // spent the handler can never log again, so it is unregistered rather
+    // than left sitting in the dispatch path. This matters more than the
+    // handler's own cost: while ANY vectored handler is registered, every
+    // exception raised anywhere in the process - including the ones TS3 and
+    // Mono raise and handle internally, thousands of times a minute once a
+    // world is live - has to walk out to user code before the __except that
+    // was going to deal with it ever runs.
+    void RetireIfSpent();
+
     bool IsInstalled() const { return m_vehHandle != nullptr; }
+
+    // Full captures per process lifetime. Five is plenty to characterise a
+    // fault; past that the log stops being readable anyway.
+    static constexpr LONG kMaxCaptures = 5;
 
   private:
     CrashCapture() = default;

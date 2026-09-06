@@ -1,6 +1,9 @@
 #include "freeze_watchdog.h"
+#include "crash_capture.h"
 #include "cursor_hook.h"
+#include "../util/config.h"
 #include "../util/logger.h"
+#include <cstdio>
 
 namespace S3FC {
 
@@ -48,6 +51,7 @@ void FreezeWatchdog::OnSimHeartbeat() {
     LARGE_INTEGER now;
     QueryPerformanceCounter(&now);
     m_lastSimHeartbeatQpc.store(now.QuadPart, std::memory_order_relaxed);
+    m_heartbeatCount.fetch_add(1, std::memory_order_relaxed);
 }
 
 DWORD WINAPI FreezeWatchdog::ThreadProc(LPVOID param) {
@@ -58,6 +62,15 @@ DWORD WINAPI FreezeWatchdog::ThreadProc(LPVOID param) {
 void FreezeWatchdog::PollLoop() {
     WatchdogState lastLoggedState = WatchdogState::Ok;
 
+    // Throughput sampling, off unless the ini asks for it. Without this the
+    // watchdog logs transitions and nothing else, so a game running at a few
+    // frames a second while the sim pump keeps up writes an empty log - the
+    // exact shape of a report that cannot be acted on.
+    const int statsSeconds = Config::HeartbeatStatsSeconds();
+    DWORD windowStartMs = GetTickCount();
+    uint64_t windowStartBeats = m_heartbeatCount.load(std::memory_order_relaxed);
+    double windowWorstGap = 0.0;
+
     // The game window may not exist yet this early (created partway through
     // TS3's own startup) - retry every poll interval until CursorHook
     // manages to find and subclass it. Once installed, Initialize() is a
@@ -65,7 +78,7 @@ void FreezeWatchdog::PollLoop() {
     // of the session. Ported from the identical retry pattern S3MM uses for
     // its own GameCursorHook.
     while (!m_stopRequested.load(std::memory_order_relaxed)) {
-        if (!CursorHook::Get().IsInstalled()) { CursorHook::Get().Initialize(); }
+        if (Config::CursorHookEnabled() && !CursorHook::Get().IsInstalled()) { CursorHook::Get().Initialize(); }
 
         LARGE_INTEGER now;
         QueryPerformanceCounter(&now);
@@ -85,6 +98,25 @@ void FreezeWatchdog::PollLoop() {
             LOG_INFO("[FreezeWatchdog] state -> " + std::string(newState == WatchdogState::Stalled ? "Stalled" : "Ok") + " (simStalled=" + std::to_string(simStalled) + "s)");
             lastLoggedState = newState;
         }
+
+        if (simStalled > windowWorstGap) { windowWorstGap = simStalled; }
+
+        if (statsSeconds > 0) {
+            const DWORD elapsedMs = GetTickCount() - windowStartMs;
+            if (elapsedMs >= static_cast<DWORD>(statsSeconds) * 1000) {
+                const uint64_t beats = m_heartbeatCount.load(std::memory_order_relaxed) - windowStartBeats;
+                const double rate = elapsedMs ? (beats * 1000.0 / elapsedMs) : 0.0;
+                char line[192];
+                sprintf_s(line, "[FreezeWatchdog] sim pump: %llu calls in %lums (%.1f/s), worst gap %.3fs",
+                          static_cast<unsigned long long>(beats), static_cast<unsigned long>(elapsedMs), rate, windowWorstGap);
+                LOG_INFO(line);
+                windowStartMs = GetTickCount();
+                windowStartBeats = m_heartbeatCount.load(std::memory_order_relaxed);
+                windowWorstGap = 0.0;
+            }
+        }
+
+        CrashCapture::Get().RetireIfSpent();
 
         Sleep(kPollIntervalMs);
     }

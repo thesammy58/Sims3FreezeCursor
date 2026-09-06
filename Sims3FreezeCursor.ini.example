@@ -1,0 +1,27 @@
+; Sims3FreezeCursor settings.
+;
+; Optional - rename to Sims3FreezeCursor.ini and put it next to the .asi.
+; Without it every setting below uses the default shown, which is what a
+; normal install wants. It exists so a problem can be narrowed down one
+; piece at a time without needing a custom build.
+
+[Sims3FreezeCursor]
+
+; The MonoScriptHost::ProcessTasks detour that feeds the stall detector.
+; 0 leaves the mod installed but inert - no stall detection, no cursor.
+SimHook=1
+
+; The WM_SETCURSOR subclass that swaps in the busy cursor during a stall.
+CursorHook=1
+
+; Writes a detailed register/stack dump to the log on an access violation
+; anywhere in the process. This is a debugging aid, not a feature: while it
+; is on, EVERY exception raised in the process - including the many the game
+; raises and handles by itself - is routed out to this mod before the game's
+; own handler runs. Turn it on only when asked for a crash log.
+CrashCapture=0
+
+; Seconds between sim-pump throughput lines in the log. 0 is off.
+; Set to 30 when reporting stutter: the watchdog otherwise only logs state
+; changes, so a game running badly while the sim keeps up logs nothing.
+HeartbeatStatsSeconds=0

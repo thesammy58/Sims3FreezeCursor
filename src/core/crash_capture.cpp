@@ -349,6 +349,20 @@ bool CrashCapture::Initialize() {
     return m_vehHandle != nullptr;
 }
 
+// Unregistering has to happen off the faulting thread: RemoveVectored-
+// ExceptionHandler while the handler is running is asking for trouble, and
+// s_inHandler tells us whether a capture is still in flight.
+void CrashCapture::RetireIfSpent() {
+    if (!m_vehHandle) return;
+    if (InterlockedCompareExchange(&s_captureCount, 0, 0) <= kMaxCaptures) return;
+    if (InterlockedCompareExchange(&s_inHandler, 0, 0) != 0) return;
+
+    PVOID handle = m_vehHandle;
+    m_vehHandle = nullptr;
+    RemoveVectoredExceptionHandler(handle);
+    LOG_INFO("[CrashCapture] Capture budget spent - handler unregistered");
+}
+
 void CrashCapture::Shutdown() {
     if (m_vehHandle) {
         RemoveVectoredExceptionHandler(m_vehHandle);
@@ -371,8 +385,8 @@ LONG CALLBACK CrashCapture::VectoredHandler(PEXCEPTION_POINTERS exInfo) {
     }
 
     LONG count = InterlockedIncrement(&s_captureCount);
-    if (count > 5) {
-        if (count == 6) { LOG_ERROR("[CrashCapture] Capture limit reached (5) - further faults will not be logged this run."); }
+    if (count > kMaxCaptures) {
+        if (count == kMaxCaptures + 1) { LOG_ERROR("[CrashCapture] Capture limit reached - handler will be unregistered."); }
         InterlockedExchange(&s_inHandler, 0);
         return EXCEPTION_CONTINUE_SEARCH;
     }

@@ -115,6 +115,8 @@
     <ClInclude Include="src\util\logger.h" />
     <ClInclude Include="src\util\memory.h" />
     <ClInclude Include="src\util\paths.h" />
+    <ClInclude Include="src\util\config.h" />
+    <ClInclude Include="src\util\game_build.h" />
   </ItemGroup>
   <!-- Source Files -->
   <ItemGroup>

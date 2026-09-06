@@ -22,6 +22,8 @@
 #include "core/freeze_watchdog.h"
 #include "core/sim_heartbeat_hook.h"
 #include "core/crash_capture.h"
+#include "util/config.h"
+#include "util/game_build.h"
 #include <Windows.h>
 #include <string>
 
@@ -46,11 +48,18 @@ DWORD WINAPI MainThread(LPVOID /*lpParam*/) {
     Logger::Get().Initialize(Paths::GetLogPath());
     LOG_INFO("Sims3FreezeCursor starting");
 
-    // CRASH CAPTURE - installed before anything else below (Addresses'
-    // pattern scan, the sim-heartbeat Detours hook, FreezeWatchdog's poll
-    // loop) so a fault during our OWN startup gets captured too, not just
-    // ones during normal play. See crash_capture.h for why this exists.
-    CrashCapture::Get().Initialize();
+    // Steam, retail and the EA App ship different builds with different
+    // addresses, so every log says which one it came from.
+    LOG_INFO("Game build: " + GameBuild::Name() + " (TimeDateStamp " + ToHex(GameBuild::TimeDateStamp()) + ")");
+
+    // CRASH CAPTURE - opt-in, and off by default. When it is on it installs
+    // before everything below, so a fault during this mod's own startup is
+    // captured too. See config.h for why a player does not get this by
+    // default, and crash_capture.h for what it collects.
+    if (Config::CrashCaptureEnabled()) {
+        LOG_INFO("[Config] CrashCapture enabled in ini");
+        CrashCapture::Get().Initialize();
+    }
 
     // FREEZE WATCHDOG - starts immediately; independent of Addresses/hooks,
     // so it's running (and can already report "no heartbeat yet") for as
@@ -60,20 +69,27 @@ DWORD WINAPI MainThread(LPVOID /*lpParam*/) {
         return 0;
     }
 
-    // ADDRESS RESOLUTION - pattern scan (with hardcoded fallback) for
-    // MonoScriptHost::ProcessTasks. This is a native function inside
-    // TS3.exe's own image, so unlike a Mono icall it's resolvable this
-    // early - no need to wait for Mono/game startup to reach any particular
-    // stage first.
-    if (!Addresses::Initialize()) {
-        LOG_ERROR("Failed to resolve MonoScriptHost::ProcessTasks - freeze detection unavailable");
-        return 0;
-    }
+    // ADDRESS RESOLUTION + SIM HEARTBEAT HOOK - the only native hook this
+    // mod installs. Both are skipped when SimHook is turned off in the ini,
+    // which leaves the watchdog running with a heartbeat that never fires:
+    // it reports Ok forever and the cursor never changes, so the mod is
+    // inert rather than half-installed. That is what makes it a usable
+    // bisect step.
+    if (Config::SimHookEnabled()) {
+        // A native function inside the game's own image, so unlike a Mono
+        // icall it is resolvable this early - no need to wait for Mono or
+        // game startup to reach any particular stage first.
+        if (!Addresses::Initialize()) {
+            LOG_ERROR("Failed to resolve MonoScriptHost::ProcessTasks - freeze detection unavailable");
+            return 0;
+        }
 
-    // SIM HEARTBEAT HOOK - the only native hook this mod installs.
-    if (!SimHeartbeatHook::Initialize()) {
-        LOG_ERROR("Failed to install sim-heartbeat hook - freeze detection unavailable");
-        return 0;
+        if (!SimHeartbeatHook::Initialize()) {
+            LOG_ERROR("Failed to install sim-heartbeat hook - freeze detection unavailable");
+            return 0;
+        }
+    } else {
+        LOG_WARN("[Config] SimHook disabled in ini - no stall detection this run");
     }
 
     // CursorHook itself is NOT initialized here - the game window usually

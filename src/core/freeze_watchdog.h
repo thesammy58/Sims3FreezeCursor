@@ -70,6 +70,10 @@ class FreezeWatchdog {
     // QueryPerformanceCounter ticks. 0 means "never fired yet".
     std::atomic<int64_t> m_lastSimHeartbeatQpc{0};
 
+    // Total heartbeats since startup. Only ever read as a difference between
+    // two samples, so wrapping is not a concern.
+    std::atomic<uint64_t> m_heartbeatCount{0};
+
     std::atomic<WatchdogState> m_state{WatchdogState::Ok};
 
     int64_t m_qpcFrequency = 1; // set in Initialize(); QueryPerformanceFrequency is never 0 on any supported Windows version

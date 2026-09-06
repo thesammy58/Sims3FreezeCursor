@@ -52,7 +52,7 @@ HCURSOR GetBusyCursor() {
         s_loadAttempted = true;
         s_busyCursor = LoadCursor(GetModuleHandle(nullptr), MAKEINTRESOURCE(103));
         if (s_busyCursor) {
-            LOG_INFO("[CursorHook] Loaded busy cursor (TS3.exe resource 103)");
+            LOG_INFO("[CursorHook] Loaded busy cursor (game executable resource 103)");
         } else {
             LOG_WARN("[CursorHook] Busy cursor (resource 103) failed to load, error " + ToHex(GetLastError()) + " - stalls will show no cursor change.");
         }

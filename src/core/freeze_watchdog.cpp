@@ -21,6 +21,44 @@ bool FreezeWatchdog::Initialize() {
     QueryPerformanceFrequency(&freq);
     m_qpcFrequency = freq.QuadPart;
 
+    // NAME THE TIMER. Windows reports a distinct QPC frequency per backing
+    // source, and the cost of a single QueryPerformanceCounter call differs
+    // between them by two orders of magnitude. That difference was the whole
+    // of the first public bug report against this mod: a per-call clock read
+    // that is free on one machine and a bus transaction on the next, with
+    // nothing in a log to tell the two apart.
+    //
+    // Reported frequencies:
+    //   10,000,000 Hz - TSC-derived, a user-mode RDTSC, tens of nanoseconds
+    //   14,318,180 Hz - HPET, a hardware bus read, microseconds
+    //    3,579,545 Hz - ACPI power-management timer, likewise
+    const char* qpcSource = "unrecognised source";
+    if (m_qpcFrequency == 10000000LL) {
+        qpcSource = "TSC-derived";
+    } else if (m_qpcFrequency == 14318180LL) {
+        qpcSource = "HPET";
+    } else if (m_qpcFrequency == 3579545LL) {
+        qpcSource = "ACPI PM timer";
+    }
+
+    // And measure it, so the log carries the real number rather than an
+    // inference from the frequency. The scratch value goes out by address to
+    // a Win32 call, so the loop cannot be optimised away. A few thousand
+    // calls costs microseconds on a good clock and a few milliseconds on a
+    // bad one - once, at startup, either way.
+    LARGE_INTEGER probeStart, probeEnd, scratch;
+    QueryPerformanceCounter(&probeStart);
+    for (int i = 0; i < 2000; ++i) { QueryPerformanceCounter(&scratch); }
+    QueryPerformanceCounter(&probeEnd);
+    const double nsPerCall = m_qpcFrequency
+                                 ? ((double)(probeEnd.QuadPart - probeStart.QuadPart) / (double)m_qpcFrequency) * 1.0e9 / 2000.0
+                                 : 0.0;
+
+    char qpcLine[192];
+    sprintf_s(qpcLine, "[FreezeWatchdog] QPC: %lld Hz (%s), %.0fns per call",
+              static_cast<long long>(m_qpcFrequency), qpcSource, nsPerCall);
+    LOG_INFO(qpcLine);
+
     m_stopRequested.store(false, std::memory_order_relaxed);
 
     HANDLE hThread = CreateThread(nullptr, 0, ThreadProc, this, 0, nullptr);

@@ -33,6 +33,14 @@ class CursorHook {
     bool Initialize();
     bool IsInstalled() const { return m_installed; }
 
+    // Diagnostic counters for the watchdog's periodic stats line. "Not
+    // seeing the busy cursor" is not evidence the cursor path is idle:
+    // WM_SETCURSOR only arrives while the pointer is moving over the
+    // window, and a stall short enough to miss visually still runs every
+    // line of this hook. These say whether it actually ran.
+    static long SetCursorMessages();
+    static long CursorSwaps();
+
   private:
     CursorHook() = default;
     ~CursorHook() = default;
@@ -40,6 +48,9 @@ class CursorHook {
     CursorHook& operator=(const CursorHook&) = delete;
 
     static LRESULT CALLBACK HookedWndProc(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lParam);
+
+    static volatile LONG s_setCursorMessages; // WM_SETCURSOR seen by the subclass
+    static volatile LONG s_cursorSwaps;       // SetCursor() calls actually made
 
     bool m_installed = false;
     HWND m_hwnd = nullptr;

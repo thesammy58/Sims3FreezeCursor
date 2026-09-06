@@ -62,6 +62,12 @@ HCURSOR GetBusyCursor() {
 
 } // namespace
 
+volatile LONG CursorHook::s_setCursorMessages = 0;
+volatile LONG CursorHook::s_cursorSwaps = 0;
+
+long CursorHook::SetCursorMessages() { return InterlockedCompareExchange(&s_setCursorMessages, 0, 0); }
+long CursorHook::CursorSwaps() { return InterlockedCompareExchange(&s_cursorSwaps, 0, 0); }
+
 CursorHook& CursorHook::Get() {
     static CursorHook instance;
     return instance;
@@ -97,6 +103,7 @@ LRESULT CALLBACK CursorHook::HookedWndProc(HWND hWnd, UINT uMsg, WPARAM wParam, 
     static bool s_cursorAppliedThisStall = false;
 
     if (uMsg == WM_SETCURSOR) {
+        InterlockedIncrement(&s_setCursorMessages);
         bool stalled = (FreezeWatchdog::Get().GetState() == WatchdogState::Stalled);
         HCURSOR busyCursor = GetBusyCursor();
 
@@ -104,6 +111,7 @@ LRESULT CALLBACK CursorHook::HookedWndProc(HWND hWnd, UINT uMsg, WPARAM wParam, 
             if (busyCursor) {
                 if (!s_cursorAppliedThisStall) {
                     SetCursor(busyCursor);
+                    InterlockedIncrement(&s_cursorSwaps);
                     s_cursorAppliedThisStall = true;
                 }
                 // Return TRUE on EVERY WM_SETCURSOR while stalled - not just
@@ -138,6 +146,7 @@ LRESULT CALLBACK CursorHook::HookedWndProc(HWND hWnd, UINT uMsg, WPARAM wParam, 
         HCURSOR busyCursor = GetBusyCursor();
         if (stalled && busyCursor) {
             SetCursor(busyCursor);
+            InterlockedIncrement(&s_cursorSwaps);
             s_cursorAppliedThisStall = true;
         }
         // Does NOT return - activation still needs to reach the game's own

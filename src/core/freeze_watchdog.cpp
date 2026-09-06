@@ -69,7 +69,10 @@ void FreezeWatchdog::PollLoop() {
     const int statsSeconds = Config::HeartbeatStatsSeconds();
     DWORD windowStartMs = GetTickCount();
     uint64_t windowStartBeats = m_heartbeatCount.load(std::memory_order_relaxed);
+    long windowStartMessages = CursorHook::SetCursorMessages();
+    long windowStartSwaps = CursorHook::CursorSwaps();
     double windowWorstGap = 0.0;
+    unsigned windowStallEntries = 0;
 
     // The game window may not exist yet this early (created partway through
     // TS3's own startup) - retry every poll interval until CursorHook
@@ -96,6 +99,7 @@ void FreezeWatchdog::PollLoop() {
 
         if (newState != lastLoggedState) {
             LOG_INFO("[FreezeWatchdog] state -> " + std::string(newState == WatchdogState::Stalled ? "Stalled" : "Ok") + " (simStalled=" + std::to_string(simStalled) + "s)");
+            if (newState == WatchdogState::Stalled) { ++windowStallEntries; }
             lastLoggedState = newState;
         }
 
@@ -106,13 +110,22 @@ void FreezeWatchdog::PollLoop() {
             if (elapsedMs >= static_cast<DWORD>(statsSeconds) * 1000) {
                 const uint64_t beats = m_heartbeatCount.load(std::memory_order_relaxed) - windowStartBeats;
                 const double rate = elapsedMs ? (beats * 1000.0 / elapsedMs) : 0.0;
-                char line[192];
-                sprintf_s(line, "[FreezeWatchdog] sim pump: %llu calls in %lums (%.1f/s), worst gap %.3fs",
-                          static_cast<unsigned long long>(beats), static_cast<unsigned long>(elapsedMs), rate, windowWorstGap);
+                const long messages = CursorHook::SetCursorMessages() - windowStartMessages;
+                const long swaps = CursorHook::CursorSwaps() - windowStartSwaps;
+
+                char line[256];
+                sprintf_s(line,
+                          "[FreezeWatchdog] %lums: pump %llu calls (%.1f/s), worst gap %.3fs, %u stalls, %ld WM_SETCURSOR, %ld cursor swaps",
+                          static_cast<unsigned long>(elapsedMs), static_cast<unsigned long long>(beats), rate,
+                          windowWorstGap, windowStallEntries, messages, swaps);
                 LOG_INFO(line);
+
                 windowStartMs = GetTickCount();
                 windowStartBeats = m_heartbeatCount.load(std::memory_order_relaxed);
+                windowStartMessages = CursorHook::SetCursorMessages();
+                windowStartSwaps = CursorHook::CursorSwaps();
                 windowWorstGap = 0.0;
+                windowStallEntries = 0;
             }
         }
 

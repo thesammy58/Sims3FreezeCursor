@@ -47,6 +47,7 @@ DWORD WINAPI MainThread(LPVOID /*lpParam*/) {
     Paths::EnsureDirectoryExists();
     Logger::Get().Initialize(Paths::GetLogPath());
     LOG_INFO("Sims3FreezeCursor starting");
+    LOG_INFO("[Config] " + Config::Describe());
 
     // Steam, retail and the EA App ship different builds with different
     // addresses, so every log says which one it came from.

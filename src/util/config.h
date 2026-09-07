@@ -67,5 +67,20 @@ inline int HeartbeatStatsSeconds() {
     return v;
 }
 
+// Logged at startup. A test run configured through a file the binary never
+// read, or read differently than intended, looks exactly like a test run
+// that produced a real result - and costs somebody an hour of play to find
+// out. This line makes the settings the mod is ACTUALLY using the second
+// thing in every log, and says whether an ini was found at all.
+inline std::string Describe() {
+    const std::wstring ini = IniPath();
+    const bool found = (GetFileAttributesW(ini.c_str()) != INVALID_FILE_ATTRIBUTES);
+    return "SimHook=" + std::to_string(SimHookMode()) +
+           " CursorHook=" + std::to_string(CursorHookEnabled() ? 1 : 0) +
+           " CrashCapture=" + std::to_string(CrashCaptureEnabled() ? 1 : 0) +
+           " HeartbeatStatsSeconds=" + std::to_string(HeartbeatStatsSeconds()) +
+           (found ? "  (Sims3FreezeCursor.ini found)" : "  (no ini - all defaults)");
+}
+
 } // namespace Config
 } // namespace S3FC

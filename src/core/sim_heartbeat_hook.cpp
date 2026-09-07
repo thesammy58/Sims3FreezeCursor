@@ -1,6 +1,7 @@
 #include "sim_heartbeat_hook.h"
 #include "addresses.h"
 #include "freeze_watchdog.h"
+#include "../util/config.h"
 #include "../util/logger.h"
 #include <Windows.h>
 #include <detours/detours.h>
@@ -53,6 +54,16 @@ static void __fastcall DetourProcessTasks(void* pHost) {
         }
     }
 
+    s_original(pHost);
+}
+
+// INERT DETOUR (SimHook=2) - a control, not a feature. Identical placement,
+// identical trampoline, identical patched bytes at the target; the only
+// difference is that it does no work of its own. If a stutter survives this,
+// it is caused by the function being detoured, not by anything this mod
+// computes - which points at Detours' trampoline, the modified code page, or
+// whatever the game does differently once its prologue has moved.
+static void __fastcall DetourProcessTasksInert(void* pHost) {
     s_original(pHost);
 }
 
@@ -128,9 +139,12 @@ bool Initialize() {
     // hooks fire per frame, each calling through to whatever was there
     // before it. See addresses.h for the matching address-resolution side
     // of this same coexistence guarantee.
+    const bool inert = (Config::SimHookMode() == 2);
+    if (inert) { LOG_WARN("[Config] SimHook=2 - installing an inert detour; the heartbeat will never fire and stall detection is disabled"); }
+
     DetourTransactionBegin();
     DetourUpdateThread(GetCurrentThread());
-    DetourAttach(&(PVOID&)s_original, DetourProcessTasks);
+    DetourAttach(&(PVOID&)s_original, inert ? DetourProcessTasksInert : DetourProcessTasks);
     LONG error = DetourTransactionCommit();
 
     if (error != NO_ERROR) {
@@ -139,7 +153,7 @@ bool Initialize() {
         return false;
     }
 
-    LOG_INFO("[SimHeartbeatHook] Hooked MonoScriptHost::ProcessTasks @ " + ToHex(Addresses::MonoScriptHost_ProcessTasks));
+    LOG_INFO(std::string("[SimHeartbeatHook] Hooked MonoScriptHost::ProcessTasks @ ") + ToHex(Addresses::MonoScriptHost_ProcessTasks) + (inert ? " (inert)" : ""));
     return true;
 }
 

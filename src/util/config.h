@@ -24,11 +24,23 @@ inline int ReadInt(const wchar_t* key, int fallback) {
     return static_cast<int>(GetPrivateProfileIntW(L"Sims3FreezeCursor", key, fallback, IniPath().c_str()));
 }
 
-// The stall detection and the cursor swap are the mod itself.
-inline bool SimHookEnabled() {
-    static const bool v = ReadInt(L"SimHook", 1) != 0;
+// SimHook is a mode, not a flag:
+//   0 - not installed at all
+//   1 - installed; the detour stamps the heartbeat (normal operation)
+//   2 - installed; the detour does nothing but call straight through
+//
+// Mode 2 exists because arithmetic ruled out the obvious explanation. The
+// detour's own work cannot cost what the reporter is losing: the sim pump
+// runs at a few hundred to ~1200 calls a second, so even the most expensive
+// clock read measured (1144ns on the HPET) accounts for about a millisecond
+// per second. Whatever the hook costs on that machine, it is not the work
+// inside it - and mode 2 is what separates "this function is hooked at all"
+// from "this hook does something".
+inline int SimHookMode() {
+    static const int v = ReadInt(L"SimHook", 1);
     return v;
 }
+inline bool SimHookEnabled() { return SimHookMode() != 0; }
 inline bool CursorHookEnabled() {
     static const bool v = ReadInt(L"CursorHook", 1) != 0;
     return v;

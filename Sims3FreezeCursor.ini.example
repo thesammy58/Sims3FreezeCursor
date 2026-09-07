@@ -8,7 +8,12 @@
 [Sims3FreezeCursor]
 
 ; The MonoScriptHost::ProcessTasks detour that feeds the stall detector.
-; 0 leaves the mod installed but inert - no stall detection, no cursor.
+;   0 = not installed at all; the mod loads but does nothing
+;   1 = normal
+;   2 = installed but inert - the detour calls straight through and does no
+;       work. Stall detection is off. This is a diagnostic control: if a
+;       performance problem survives 2 but not 0, it is caused by the
+;       function being hooked rather than by anything this mod computes.
 SimHook=1
 
 ; The WM_SETCURSOR subclass that swaps in the busy cursor during a stall.

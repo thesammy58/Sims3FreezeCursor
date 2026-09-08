@@ -1,4 +1,5 @@
 #pragma once
+#include <cstdint>
 
 namespace S3FC {
 
@@ -19,6 +20,12 @@ namespace SimHeartbeatHook {
 // i.e. immediately, with no dependency on Mono having started yet. Safe to
 // call once at startup.
 bool Initialize();
+
+// Diagnostic counters, non-zero only under SimHook=3. Every argument made
+// about this hook's cost so far has come from reading its source, not from
+// timing it on a machine where it hurts. These are the timing.
+uint64_t ProfiledCycles(); // TSC cycles spent inside the real ProcessTasks
+uint32_t ProfiledCalls();  // calls measured
 
 } // namespace SimHeartbeatHook
 } // namespace S3FC

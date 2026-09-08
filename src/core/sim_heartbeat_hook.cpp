@@ -5,6 +5,7 @@
 #include "../util/logger.h"
 #include <Windows.h>
 #include <detours/detours.h>
+#include <intrin.h>
 #include <cstdint>
 #include <string>
 
@@ -65,6 +66,30 @@ static void __fastcall DetourProcessTasks(void* pHost) {
 // whatever the game does differently once its prologue has moved.
 static void __fastcall DetourProcessTasksInert(void* pHost) {
     s_original(pHost);
+}
+
+// PROFILING DETOUR (SimHook=3) - inert, plus an RDTSC bracket around the
+// pass-through. It answers the question nobody has actually measured: on a
+// machine where this hook makes the game unplayable, how long does a call to
+// the real ProcessTasks take, and what share of the wall clock is that?
+//
+// Three outcomes, all useful. A large share means the time is going into the
+// function or the trampoline. A tiny share means it is not going there at
+// all - the hook would then be a trigger rather than a cost, changing the
+// timing of something else in the process rather than consuming anything
+// itself, and no amount of trimming our side would help.
+//
+// Single writer (the sim thread), so plain accumulation is fine. The 64-bit
+// read on the watchdog thread can tear, which costs at most one bad sample
+// out of a ten-second window.
+static volatile uint64_t s_profCycles = 0;
+static volatile uint32_t s_profCalls = 0;
+
+static void __fastcall DetourProcessTasksProfiled(void* pHost) {
+    const uint64_t start = __rdtsc();
+    s_original(pHost);
+    s_profCycles += (__rdtsc() - start);
+    ++s_profCalls;
 }
 
 // COEXISTENCE - yield address resolution to whoever was here first.
@@ -139,12 +164,19 @@ bool Initialize() {
     // hooks fire per frame, each calling through to whatever was there
     // before it. See addresses.h for the matching address-resolution side
     // of this same coexistence guarantee.
-    const bool inert = (Config::SimHookMode() == 2);
+    const int mode = Config::SimHookMode();
+    const bool inert = (mode == 2);
+    const bool profiled = (mode == 3);
     if (inert) { LOG_WARN("[Config] SimHook=2 - installing an inert detour; the heartbeat will never fire and stall detection is disabled"); }
+    if (profiled) { LOG_WARN("[Config] SimHook=3 - installing a profiling detour; the heartbeat will never fire and stall detection is disabled"); }
+
+    void(__fastcall * chosen)(void*) = DetourProcessTasks;
+    if (inert) { chosen = DetourProcessTasksInert; }
+    if (profiled) { chosen = DetourProcessTasksProfiled; }
 
     DetourTransactionBegin();
     DetourUpdateThread(GetCurrentThread());
-    DetourAttach(&(PVOID&)s_original, inert ? DetourProcessTasksInert : DetourProcessTasks);
+    DetourAttach(&(PVOID&)s_original, chosen);
     LONG error = DetourTransactionCommit();
 
     if (error != NO_ERROR) {
@@ -153,9 +185,12 @@ bool Initialize() {
         return false;
     }
 
-    LOG_INFO(std::string("[SimHeartbeatHook] Hooked MonoScriptHost::ProcessTasks @ ") + ToHex(Addresses::MonoScriptHost_ProcessTasks) + (inert ? " (inert)" : ""));
+    LOG_INFO(std::string("[SimHeartbeatHook] Hooked MonoScriptHost::ProcessTasks @ ") + ToHex(Addresses::MonoScriptHost_ProcessTasks) + (inert ? " (inert)" : profiled ? " (profiling)" : ""));
     return true;
 }
+
+uint64_t ProfiledCycles() { return s_profCycles; }
+uint32_t ProfiledCalls() { return s_profCalls; }
 
 } // namespace SimHeartbeatHook
 } // namespace S3FC

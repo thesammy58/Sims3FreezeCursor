@@ -1,9 +1,11 @@
 #include "freeze_watchdog.h"
 #include "crash_capture.h"
 #include "cursor_hook.h"
+#include "sim_heartbeat_hook.h"
 #include "../util/config.h"
 #include "../util/logger.h"
 #include <cstdio>
+#include <intrin.h>
 
 namespace S3FC {
 
@@ -110,6 +112,13 @@ void FreezeWatchdog::PollLoop() {
     // The watchdog owns the clock (see freeze_watchdog.h). It samples the
     // counter the detour bumps and timestamps only the changes, so the sim
     // thread never reads a clock at all.
+    // TSC at the window edges. Taking the ratio of "cycles spent inside
+    // ProcessTasks" to "cycles elapsed" needs no clock frequency at all - the
+    // units cancel - which is why this is a ratio and not a duration.
+    uint64_t windowStartTsc = __rdtsc();
+    uint64_t windowStartProfCycles = SimHeartbeatHook::ProfiledCycles();
+    uint32_t windowStartProfCalls = SimHeartbeatHook::ProfiledCalls();
+
     LONG lastSeenTicks = g_simHeartbeatTicks;
     int64_t lastChangeQpc = 0;
     bool everFired = false;
@@ -167,6 +176,22 @@ void FreezeWatchdog::PollLoop() {
                           static_cast<unsigned long>(elapsedMs), static_cast<long>(beats), rate,
                           windowWorstGap, windowStallEntries, messages, swaps);
                 LOG_INFO(line);
+
+                const uint64_t tscElapsed = __rdtsc() - windowStartTsc;
+                const uint64_t profCycles = SimHeartbeatHook::ProfiledCycles() - windowStartProfCycles;
+                const uint32_t profCalls = SimHeartbeatHook::ProfiledCalls() - windowStartProfCalls;
+                if (profCalls > 0) {
+                    char profLine[192];
+                    sprintf_s(profLine, "[SimHeartbeatHook] ProcessTasks: %lu calls, avg %llu cycles, %.2f%% of one core",
+                              static_cast<unsigned long>(profCalls),
+                              static_cast<unsigned long long>(profCycles / profCalls),
+                              tscElapsed ? (100.0 * (double)profCycles / (double)tscElapsed) : 0.0);
+                    LOG_INFO(profLine);
+                }
+
+                windowStartTsc = __rdtsc();
+                windowStartProfCycles = SimHeartbeatHook::ProfiledCycles();
+                windowStartProfCalls = SimHeartbeatHook::ProfiledCalls();
 
                 windowStartMs = GetTickCount();
                 windowStartTicks = g_simHeartbeatTicks;

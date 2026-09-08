@@ -14,6 +14,8 @@
 ;       work. Stall detection is off. This is a diagnostic control: if a
 ;       performance problem survives 2 but not 0, it is caused by the
 ;       function being hooked rather than by anything this mod computes.
+;   3 = inert, plus timing. Reports how long the hooked function takes and
+;       what share of the wall clock that is. Needs HeartbeatStatsSeconds set.
 SimHook=1
 
 ; The WM_SETCURSOR subclass that swaps in the busy cursor during a stall.

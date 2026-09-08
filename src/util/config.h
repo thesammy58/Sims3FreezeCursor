@@ -28,6 +28,7 @@ inline int ReadInt(const wchar_t* key, int fallback) {
 //   0 - not installed at all
 //   1 - installed; the detour stamps the heartbeat (normal operation)
 //   2 - installed; the detour does nothing but call straight through
+//   3 - installed; inert, plus RDTSC timing of the pass-through call
 //
 // Mode 2 exists because arithmetic ruled out the obvious explanation. The
 // detour's own work cannot cost what the reporter is losing: the sim pump

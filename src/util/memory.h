@@ -20,6 +20,15 @@ uintptr_t ScanPattern(BYTE* start, size_t size, const char* pattern);
 // Convenience: scan main module
 uintptr_t ScanPattern(const char* pattern);
 
+// Every direct `call rel32` (E8) in the main module whose computed target is
+// `target`. Writes up to maxOut addresses into out and returns the TOTAL found,
+// which may exceed maxOut.
+//
+// Two uses. It locates the instruction a call-site hook rewrites - and it is a
+// free sanity check on an address resolved by pattern scan, because a function
+// nothing calls is not the function you think you found.
+size_t FindDirectCallSites(uintptr_t target, uintptr_t* out, size_t maxOut);
+
 struct ModuleInfo {
     uintptr_t base;
     size_t size;

@@ -58,6 +58,20 @@ inline bool CrashCaptureEnabled() {
     return v;
 }
 
+// HOW the hook attaches, as opposed to what it does:
+//   0 - auto: rewrite the call site when exactly one is found, prologue detour otherwise
+//   1 - force the call-site rewrite; do not install at all if it is not possible
+//   2 - force the prologue detour (the original method)
+//
+// Rewriting the call is preferred because it leaves the target function's own
+// bytes exactly as the game shipped them. A prologue detour overwrites them,
+// which is what breaks every other mod's pattern scan for the same function -
+// the coexistence problem in the design doc's section 36.
+inline int HookMethod() {
+    static const int v = ReadInt(L"HookMethod", 0);
+    return v;
+}
+
 // 0 = off. Any other value writes a sim-pump throughput line every N seconds.
 // Worth setting when investigating a report, because the watchdog otherwise
 // logs only state transitions: a game that stutters badly while the sim keeps
@@ -77,6 +91,7 @@ inline std::string Describe() {
     const std::wstring ini = IniPath();
     const bool found = (GetFileAttributesW(ini.c_str()) != INVALID_FILE_ATTRIBUTES);
     return "SimHook=" + std::to_string(SimHookMode()) +
+           " HookMethod=" + std::to_string(HookMethod()) +
            " CursorHook=" + std::to_string(CursorHookEnabled() ? 1 : 0) +
            " CrashCapture=" + std::to_string(CrashCaptureEnabled() ? 1 : 0) +
            " HeartbeatStatsSeconds=" + std::to_string(HeartbeatStatsSeconds()) +

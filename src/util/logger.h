@@ -42,7 +42,10 @@ class Logger {
         if (!m_csInitialized) return;
 
         EnterCriticalSection(&m_cs);
-        if (m_file.is_open()) { m_file.close(); }
+        if (m_file.is_open()) {
+            m_file.flush();
+            m_file.close();
+        }
         m_initialized = false;
         LeaveCriticalSection(&m_cs);
     }
@@ -69,7 +72,26 @@ class Logger {
         std::tm tm_buf;
         localtime_s(&tm_buf, &time);
 
-        m_file << std::put_time(&tm_buf, "%H:%M:%S") << '.' << std::setfill('0') << std::setw(3) << ms.count() << " [" << LevelToString(level) << "] " << message << std::endl;
+        m_file << std::put_time(&tm_buf, "%H:%M:%S") << '.' << std::setfill('0') << std::setw(3) << ms.count() << " [" << LevelToString(level) << "] " << message << '\n';
+
+        // FLUSH POLICY. This was std::endl, which is '\n' plus an
+        // unconditional flush - so every line, however trivial, cost a
+        // synchronous WriteFile. Not free: the log sits next to the .asi in
+        // the game folder where a real-time scanner may inspect each write,
+        // and the cost lands on whichever thread did the logging.
+        //
+        // Errors still flush immediately. A crash capture that loses its last
+        // lines to the crash it is reporting is worth nothing, and a fault is
+        // not the moment to economise on syscalls. Everything else coalesces
+        // to at most one flush every 250ms, so a burst costs one write rather
+        // than one write each, and a hard exit loses at most a quarter second
+        // of INFO.
+        const DWORD nowTick = GetTickCount();
+        if (level >= Level::Error || (nowTick - m_lastFlushTick) >= kFlushIntervalMs) {
+            m_file.flush();
+            m_lastFlushTick = nowTick;
+        }
+
         LeaveCriticalSection(&m_cs);
     }
 
@@ -99,7 +121,10 @@ class Logger {
         }
     }
 
+    static constexpr DWORD kFlushIntervalMs = 250;
+
     std::ofstream m_file;
+    DWORD m_lastFlushTick = 0;
     CRITICAL_SECTION m_cs;
     bool m_csInitialized = false;
     bool m_initialized = false;

@@ -70,6 +70,32 @@ uintptr_t ScanPattern(BYTE* start, size_t size, const char* pattern) {
     return 0;
 }
 
+size_t FindDirectCallSites(uintptr_t target, uintptr_t* out, size_t maxOut) {
+    const ModuleInfo mod = GetMainModule();
+    if (!mod.base || mod.size < 5) { return 0; }
+
+    const BYTE* base = reinterpret_cast<const BYTE*>(mod.base);
+    size_t count = 0;
+
+    // The whole image rather than just its code sections. A four-byte
+    // displacement that happens to compute to exactly this address out of
+    // unrelated data is vanishingly unlikely, and if one ever did the caller's
+    // "exactly one site" requirement rejects the whole thing rather than
+    // patching the wrong place - the failure mode is a refusal, not a crash.
+    for (size_t i = 0; i + 5 <= mod.size; ++i) {
+        if (base[i] != 0xE8) { continue; }
+        const int32_t rel = *reinterpret_cast<const int32_t*>(base + i + 1);
+        const uintptr_t site = mod.base + i;
+        const uintptr_t dest = static_cast<uintptr_t>(static_cast<intptr_t>(site + 5) + rel);
+        if (dest == target) {
+            if (count < maxOut) { out[count] = site; }
+            ++count;
+        }
+    }
+
+    return count;
+}
+
 uintptr_t ScanPattern(const char* pattern) {
     ModuleInfo mod = GetMainModule();
     return ScanPattern(reinterpret_cast<BYTE*>(mod.base), mod.size, pattern);

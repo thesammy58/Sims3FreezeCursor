@@ -2,6 +2,7 @@
 #include "addresses.h"
 #include "freeze_watchdog.h"
 #include "../util/config.h"
+#include "../util/memory.h"
 #include "../util/logger.h"
 #include <Windows.h>
 #include <detours/detours.h>
@@ -92,6 +93,78 @@ static void __fastcall DetourProcessTasksProfiled(void* pHost) {
     ++s_profCalls;
 }
 
+// CALL-SITE HOOK - rewrite the one call instruction instead of the function.
+//
+// Suggested by Just Harry, and better than it first looks. A prologue detour
+// has to relocate the target's opening instructions into a trampoline and
+// satisfy the ABI around them. Rewriting the four displacement bytes of the
+// single `call` that reaches the function does none of that, and leaves the
+// target's own bytes exactly as the game shipped them.
+//
+// Two consequences beyond the saved work. Any other mod that finds this
+// function by scanning for its prologue still finds it - that is the whole
+// coexistence problem of section 36, removed at the root rather than worked
+// around by waiting for the other mod to go first. And on a build where
+// patching that prologue is somehow catastrophic, this never touches it.
+//
+// On Steam 1.67 the call site is a single instruction:
+//
+//   00D81946:  8B CF           mov  ecx, edi          ; this
+//   00D81948:  E8 13 E3 FF FF  call 00D7FC60          ; the five bytes
+//   00D8194D:  8D 4C 24 18     lea  ecx, [esp+18h]
+//
+// `mov ecx, edi` immediately before it is the __fastcall/thiscall `this`, so
+// the rewritten call still lands on a plain void __fastcall(void*) that cleans
+// no stack - which means the detour bodies above serve as thunks unchanged,
+// with s_original pointing at the real function rather than a trampoline.
+static uintptr_t s_callSite = 0;
+static LONG s_originalDisplacement = 0;
+
+static bool InstallCallSiteHook(uintptr_t target, void(__fastcall* thunk)(void*)) {
+    uintptr_t sites[8] = {};
+    const size_t found = Memory::FindDirectCallSites(target, sites, 8);
+
+    LOG_INFO("[SimHeartbeatHook] Direct call sites targeting " + ToHex(target) + ": " + std::to_string(found));
+    for (size_t i = 0; i < found && i < 8; ++i) { LOG_INFO("[SimHeartbeatHook]   call at " + ToHex(sites[i])); }
+
+    if (found == 0) {
+        // Worth saying plainly, because it questions the address rather than
+        // the technique: nothing in the image calls this directly.
+        LOG_WARN("[SimHeartbeatHook] Nothing calls " + ToHex(target) + " directly - it is reached indirectly, or it is not a function entry");
+        return false;
+    }
+    if (found != 1) {
+        LOG_WARN("[SimHeartbeatHook] " + std::to_string(found) + " call sites; rewriting one would miss the others");
+        return false;
+    }
+
+    const uintptr_t site = sites[0];
+    LONG* displacement = reinterpret_cast<LONG*>(site + 1);
+    const LONG rewritten = static_cast<LONG>(reinterpret_cast<uintptr_t>(thunk) - (site + 5));
+
+    DWORD oldProtect = 0;
+    if (!VirtualProtect(displacement, sizeof(LONG), PAGE_EXECUTE_READWRITE, &oldProtect)) {
+        LOG_ERROR("[SimHeartbeatHook] VirtualProtect failed at " + ToHex(site) + ", GetLastError=" + std::to_string(GetLastError()));
+        return false;
+    }
+
+    // One locked four-byte write. x86 keeps a locked operation atomic even
+    // when it straddles an alignment boundary - and this one does, since the
+    // displacement sits one byte into the instruction - so a thread executing
+    // this call while it is being patched sees either the old target or the
+    // new one, never four bytes of each. Thread suspension is what a prologue
+    // detour needs to get the same guarantee.
+    s_originalDisplacement = InterlockedExchange(displacement, rewritten);
+
+    DWORD restored = 0;
+    VirtualProtect(displacement, sizeof(LONG), oldProtect, &restored);
+    FlushInstructionCache(GetCurrentProcess(), reinterpret_cast<void*>(site), 5);
+
+    s_callSite = site;
+    LOG_INFO("[SimHeartbeatHook] Rewrote the call at " + ToHex(site) + " (target's own bytes left untouched)");
+    return true;
+}
+
 // COEXISTENCE - yield address resolution to whoever was here first.
 //
 // This mod and S3MM both locate MonoScriptHost::ProcessTasks by scanning for
@@ -152,10 +225,35 @@ bool Initialize() {
 
     s_original = (ProcessTasks_t)Addresses::MonoScriptHost_ProcessTasks;
 
-    // Let any co-resident Mono modder resolve and install first - see the note
-    // above YieldToCoResidentHooks. Safe to block here: FreezeWatchdog is
-    // already running on its own thread and simply reports "no heartbeat yet"
-    // until we attach.
+    const int mode = Config::SimHookMode();
+    const bool inert = (mode == 2);
+    const bool profiled = (mode == 3);
+    if (inert) { LOG_WARN("[Config] SimHook=2 - installing an inert hook; the heartbeat will never fire and stall detection is disabled"); }
+    if (profiled) { LOG_WARN("[Config] SimHook=3 - installing a profiling hook; the heartbeat will never fire and stall detection is disabled"); }
+
+    void(__fastcall * chosen)(void*) = DetourProcessTasks;
+    if (inert) { chosen = DetourProcessTasksInert; }
+    if (profiled) { chosen = DetourProcessTasksProfiled; }
+
+    // CALL SITE FIRST. Rewriting the one call that reaches this function
+    // leaves the function itself as the game shipped it, so nothing else's
+    // pattern scan is disturbed and no trampoline exists to go wrong.
+    const int method = Config::HookMethod();
+    if (method == 0 || method == 1) {
+        if (InstallCallSiteHook(Addresses::MonoScriptHost_ProcessTasks, chosen)) {
+            LOG_INFO(std::string("[SimHeartbeatHook] Hooked MonoScriptHost::ProcessTasks @ ") + ToHex(Addresses::MonoScriptHost_ProcessTasks) + " via its call site" + (inert ? " (inert)" : profiled ? " (profiling)" : ""));
+            return true;
+        }
+        if (method == 1) {
+            LOG_ERROR("[SimHeartbeatHook] HookMethod=1 asked for a call-site rewrite and this build cannot take one - not installing");
+            s_original = nullptr;
+            return false;
+        }
+        LOG_WARN("[SimHeartbeatHook] Falling back to a prologue detour");
+    }
+
+    // Only the detour path needs to wait. A call-site rewrite leaves the
+    // prologue intact, so there is nobody to yield to.
     YieldToCoResidentHooks(Addresses::MonoScriptHost_ProcessTasks);
 
     // Detours explicitly supports attaching on top of a target another
@@ -164,16 +262,6 @@ bool Initialize() {
     // hooks fire per frame, each calling through to whatever was there
     // before it. See addresses.h for the matching address-resolution side
     // of this same coexistence guarantee.
-    const int mode = Config::SimHookMode();
-    const bool inert = (mode == 2);
-    const bool profiled = (mode == 3);
-    if (inert) { LOG_WARN("[Config] SimHook=2 - installing an inert detour; the heartbeat will never fire and stall detection is disabled"); }
-    if (profiled) { LOG_WARN("[Config] SimHook=3 - installing a profiling detour; the heartbeat will never fire and stall detection is disabled"); }
-
-    void(__fastcall * chosen)(void*) = DetourProcessTasks;
-    if (inert) { chosen = DetourProcessTasksInert; }
-    if (profiled) { chosen = DetourProcessTasksProfiled; }
-
     DetourTransactionBegin();
     DetourUpdateThread(GetCurrentThread());
     DetourAttach(&(PVOID&)s_original, chosen);

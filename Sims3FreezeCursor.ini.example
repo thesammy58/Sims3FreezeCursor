@@ -18,6 +18,14 @@
 ;       what share of the wall clock that is. Needs HeartbeatStatsSeconds set.
 SimHook=1
 
+; How the hook attaches, as opposed to what it does.
+;   0 = auto - rewrite the call site if exactly one is found, else detour
+;   1 = force the call-site rewrite; don't install at all if it isn't possible
+;   2 = force the prologue detour (the original method)
+; Rewriting the call leaves the target function's own bytes untouched, so other
+; mods that locate the same function by scanning for its prologue still find it.
+HookMethod=0
+
 ; The WM_SETCURSOR subclass that swaps in the busy cursor during a stall.
 CursorHook=1
 

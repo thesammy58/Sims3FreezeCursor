@@ -117,6 +117,7 @@
     <ClInclude Include="src\util\paths.h" />
     <ClInclude Include="src\util\config.h" />
     <ClInclude Include="src\util\game_build.h" />
+    <ClInclude Include="src\util\version.h" />
   </ItemGroup>
   <!-- Source Files -->
   <ItemGroup>

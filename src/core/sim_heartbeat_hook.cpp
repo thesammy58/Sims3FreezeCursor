@@ -235,22 +235,28 @@ bool Initialize() {
     if (inert) { chosen = DetourProcessTasksInert; }
     if (profiled) { chosen = DetourProcessTasksProfiled; }
 
-    // CALL SITE FIRST. Rewriting the one call that reaches this function
+    // CALL SITE, OR NOTHING. Rewriting the one call that reaches this function
     // leaves the function itself as the game shipped it, so nothing else's
     // pattern scan is disturbed and no trampoline exists to go wrong.
+    //
+    // There is deliberately no automatic fallback to the prologue detour. One
+    // build in the wild became unplayable under it and nothing we found
+    // explains why (section 42), so falling back would mean quietly choosing a
+    // mechanism known to have ruined someone's game, on a build nobody has
+    // tested. A mod that does nothing and says so is the better failure.
+    // HookMethod=2 still asks for the old method explicitly.
     const int method = Config::HookMethod();
-    if (method == 0 || method == 1) {
+    if (method != 2) {
         if (InstallCallSiteHook(Addresses::MonoScriptHost_ProcessTasks, chosen)) {
             LOG_INFO(std::string("[SimHeartbeatHook] Hooked MonoScriptHost::ProcessTasks @ ") + ToHex(Addresses::MonoScriptHost_ProcessTasks) + " via its call site" + (inert ? " (inert)" : profiled ? " (profiling)" : ""));
             return true;
         }
-        if (method == 1) {
-            LOG_ERROR("[SimHeartbeatHook] HookMethod=1 asked for a call-site rewrite and this build cannot take one - not installing");
-            s_original = nullptr;
-            return false;
-        }
-        LOG_WARN("[SimHeartbeatHook] Falling back to a prologue detour");
+        LOG_ERROR("[SimHeartbeatHook] This game build has no single call site to rewrite - not installing. Freeze detection is off for this session. Set HookMethod=2 in Sims3FreezeCursor.ini to use the older prologue detour instead.");
+        s_original = nullptr;
+        return false;
     }
+
+    LOG_WARN("[SimHeartbeatHook] HookMethod=2 - using the prologue detour by request");
 
     // Only the detour path needs to wait. A call-site rewrite leaves the
     // prologue intact, so there is nobody to yield to.

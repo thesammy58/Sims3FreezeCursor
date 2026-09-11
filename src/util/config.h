@@ -59,9 +59,11 @@ inline bool CrashCaptureEnabled() {
 }
 
 // HOW the hook attaches, as opposed to what it does:
-//   0 - auto: rewrite the call site when exactly one is found, prologue detour otherwise
-//   1 - force the call-site rewrite; do not install at all if it is not possible
-//   2 - force the prologue detour (the original method)
+//   0 - rewrite the call site; install nothing if that is not possible (default)
+//   1 - same as 0, kept so existing ini files and instructions still mean what
+//       they said
+//   2 - use the prologue detour instead: the older method, and the one a Steam
+//       build once became unplayable under for reasons still unknown
 //
 // Rewriting the call is preferred because it leaves the target function's own
 // bytes exactly as the game shipped them. A prologue detour overwrites them,

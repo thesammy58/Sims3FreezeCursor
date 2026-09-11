@@ -24,6 +24,7 @@
 #include "core/crash_capture.h"
 #include "util/config.h"
 #include "util/game_build.h"
+#include "util/version.h"
 #include <Windows.h>
 #include <string>
 
@@ -46,7 +47,7 @@ DWORD WINAPI MainThread(LPVOID /*lpParam*/) {
 
     Paths::EnsureDirectoryExists();
     Logger::Get().Initialize(Paths::GetLogPath());
-    LOG_INFO("Sims3FreezeCursor starting");
+    LOG_INFO(std::string("Sims3FreezeCursor ") + kVersion + " starting");
     LOG_INFO("[Config] " + Config::Describe());
 
     // Steam, retail and the EA App ship different builds with different
@@ -109,6 +110,15 @@ DWORD WINAPI MainThread(LPVOID /*lpParam*/) {
 BOOL APIENTRY DllMain(HMODULE hModule, DWORD reason, LPVOID /*lpReserved*/) {
     if (reason == DLL_PROCESS_ATTACH) {
         DisableThreadLibraryCalls(hModule);
+
+        // PIN THIS MODULE. The call instruction we rewrite points into this
+        // DLL, so if anything ever unloaded us the game's next call to
+        // ProcessTasks would jump into unmapped memory. ASI loaders do not
+        // normally call FreeLibrary on what they load, but "normally" is not
+        // worth betting a crash on when one flag makes it impossible.
+        HMODULE pinned = nullptr;
+        GetModuleHandleExW(GET_MODULE_HANDLE_EX_FLAG_PIN | GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS,
+                           reinterpret_cast<LPCWSTR>(&DllMain), &pinned);
 
         HANDLE hThread = CreateThread(nullptr, 0, S3FC::MainThread, nullptr, 0, nullptr);
         if (hThread) { CloseHandle(hThread); }

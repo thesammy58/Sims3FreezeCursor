@@ -91,6 +91,17 @@ bool CursorHook::Initialize() {
     return true;
 }
 
+void CursorHook::NudgeCursor() {
+    if (!m_installed || !m_hwnd) { return; }
+
+    // Posted rather than sent. SendMessage would block this watchdog thread
+    // until the game's UI thread got round to it, and the whole premise of
+    // this mod is that the game is in the middle of not getting round to
+    // things. Posting also means SetCursor still runs on the thread that owns
+    // the window, which is the only thread allowed to do it.
+    PostMessage(m_hwnd, WM_SETCURSOR, reinterpret_cast<WPARAM>(m_hwnd), MAKELPARAM(HTCLIENT, WM_MOUSEMOVE));
+}
+
 LRESULT CALLBACK CursorHook::HookedWndProc(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lParam) {
     // Edge-triggered application flag, ported from S3MM's own
     // imgui_manager.cpp: Win32 restarts an animated (.ani) cursor's

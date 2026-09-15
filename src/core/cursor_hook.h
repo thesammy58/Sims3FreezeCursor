@@ -33,6 +33,23 @@ class CursorHook {
     bool Initialize();
     bool IsInstalled() const { return m_installed; }
 
+    // Make the window re-evaluate its cursor NOW, without waiting for the
+    // pointer to move.
+    //
+    // WM_SETCURSOR is only delivered when the mouse moves over the window (or
+    // a button goes down). Hold the mouse still through a stall and the game
+    // never asks, so the subclass below never runs and the arrow just sits
+    // there until the player happens to twitch the mouse - which is exactly
+    // backwards for a mod whose whole job is telling you something is wrong
+    // while you sit and wait. The same applies on the way out: the busy cursor
+    // would linger after the stall ended.
+    //
+    // So the watchdog calls this on every state change and we post the message
+    // ourselves. A posted WM_SETCURSOR reaches the same window procedure and
+    // does the same work; only its return value is discarded, and we call
+    // SetCursor for the side effect rather than the return.
+    void NudgeCursor();
+
     // Diagnostic counters for the watchdog's periodic stats line. "Not
     // seeing the busy cursor" is not evidence the cursor path is idle:
     // WM_SETCURSOR only arrives while the pointer is moving over the

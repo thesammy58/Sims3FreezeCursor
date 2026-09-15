@@ -104,7 +104,10 @@ Requires **Visual Studio 2022** and **vcpkg**.
   the mod says so in the log and installs nothing rather than guessing.
 - While stalled, a subclassed WndProc on the game's own window intercepts
   `WM_SETCURSOR` and forces the game's built-in busy-cursor resource (ID
-  103) instead of letting the game repaint its normal cursor.
+  103) instead of letting the game repaint its normal cursor. Windows only
+  delivers that message when the pointer moves, so the watchdog posts one
+  itself on each state change - otherwise a stall that began while you sat
+  still would show nothing until you happened to move the mouse.
 - The game's window is found via `EnumWindows`, not through any D3D9 hook -
   this mod never touches D3D9 at all.
 

@@ -158,6 +158,12 @@ void FreezeWatchdog::PollLoop() {
             LOG_INFO("[FreezeWatchdog] state -> " + std::string(newState == WatchdogState::Stalled ? "Stalled" : "Ok") + " (simStalled=" + std::to_string(simStalled) + "s)");
             if (newState == WatchdogState::Stalled) { ++windowStallEntries; }
             lastLoggedState = newState;
+
+            // Both directions, and only on the change. m_state is already
+            // stored above, so by the time the window procedure runs it reads
+            // the new state. See CursorHook::NudgeCursor for why waiting for
+            // the pointer to move was never going to work.
+            CursorHook::Get().NudgeCursor();
         }
 
         if (simStalled > windowWorstGap) { windowWorstGap = simStalled; }

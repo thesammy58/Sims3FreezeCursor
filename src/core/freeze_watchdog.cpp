@@ -11,6 +11,41 @@ namespace S3FC {
 
 volatile LONG g_simHeartbeatTicks = 0;
 
+namespace {
+
+// "2.7s" under a minute, "1m 23s" over. Stalls are measured against a 150ms
+// poll, so a tenth of a second is already a little generous as precision -
+// and minutes read better than "83.4s" to someone who just sat through one.
+std::string FormatDuration(double seconds) {
+    char buf[32];
+    if (seconds < 60.0) {
+        sprintf_s(buf, "%.1fs", seconds);
+    } else {
+        const int whole = static_cast<int>(seconds);
+        sprintf_s(buf, "%dm %02ds", whole / 60, whole % 60);
+    }
+    return buf;
+}
+
+// A stall is summarised when it ends, which is the right time for nearly all
+// of them - but a hard freeze never ends, and a log that only reports
+// finished stalls would say nothing at all about the one case that matters
+// most. So a long stall also reports progress: at 10s, 30s, 1m, then every
+// minute. A crash mid-freeze leaves a trail showing how long it went on.
+//
+// The first mark is 10s rather than something earlier because ordinary play
+// is full of 1-6 second stalls; a mark inside that range fires a fraction of
+// a second before the stall ends and just doubles the line count.
+constexpr double kFirstProgressMark = 10.0;
+
+double NextProgressMark(double current) {
+    if (current < 30.0) return 30.0;
+    if (current < 60.0) return 60.0;
+    return current + 60.0;
+}
+
+} // namespace
+
 FreezeWatchdog& FreezeWatchdog::Get() {
     static FreezeWatchdog instance;
     return instance;
@@ -95,7 +130,8 @@ DWORD WINAPI FreezeWatchdog::ThreadProc(LPVOID param) {
 }
 
 void FreezeWatchdog::PollLoop() {
-    WatchdogState lastLoggedState = WatchdogState::Ok;
+    WatchdogState lastState = WatchdogState::Ok;
+    double nextProgressMark = kFirstProgressMark;
 
     // Throughput sampling, off unless the ini asks for it. Without this the
     // watchdog logs transitions and nothing else, so a game running at a few
@@ -135,29 +171,45 @@ void FreezeWatchdog::PollLoop() {
         LARGE_INTEGER now;
         QueryPerformanceCounter(&now);
 
+        // Time since the counter last moved, taken BEFORE this poll's sample
+        // is folded in. On the poll where a stall ends, this is the stall's
+        // whole length - the one number worth reporting. Measured after the
+        // update it reads zero every time, which is exactly what the old log
+        // line printed on every recovery.
+        //
+        // "Never fired yet" is not the same as "stale" - before the first
+        // heartbeat arrives there is nothing to be late.
+        double sinceLastChange = 0.0;
+        if (everFired) {
+            int64_t delta = now.QuadPart - lastChangeQpc;
+            if (delta < 0) delta = 0; // guard against QPC/TSC weirdness across cores
+            sinceLastChange = (double)delta / (double)m_qpcFrequency;
+        }
+
         const LONG ticks = g_simHeartbeatTicks;
-        if (ticks != lastSeenTicks) {
+        const bool moved = (ticks != lastSeenTicks);
+        if (moved) {
             lastSeenTicks = ticks;
             lastChangeQpc = now.QuadPart;
             everFired = true;
         }
 
-        // "Never fired yet" is not the same as "stale" - before the first
-        // heartbeat arrives there is nothing to be late.
-        double simStalled = 0.0;
-        if (everFired) {
-            int64_t delta = now.QuadPart - lastChangeQpc;
-            if (delta < 0) delta = 0; // guard against QPC/TSC weirdness across cores
-            simStalled = (double)delta / (double)m_qpcFrequency;
-        }
+        const double simStalled = moved ? 0.0 : sinceLastChange;
 
         WatchdogState newState = (simStalled >= kStallThresholdSeconds) ? WatchdogState::Stalled : WatchdogState::Ok;
         m_state.store(newState, std::memory_order_relaxed);
 
-        if (newState != lastLoggedState) {
-            LOG_INFO("[FreezeWatchdog] state -> " + std::string(newState == WatchdogState::Stalled ? "Stalled" : "Ok") + " (simStalled=" + std::to_string(simStalled) + "s)");
-            if (newState == WatchdogState::Stalled) { ++windowStallEntries; }
-            lastLoggedState = newState;
+        if (newState != lastState) {
+            if (newState == WatchdogState::Stalled) {
+                // Nothing worth logging yet. The only number available at this
+                // moment is the threshold plus poll jitter - the same ~1.05s
+                // every single time.
+                ++windowStallEntries;
+                nextProgressMark = kFirstProgressMark;
+            } else {
+                LOG_INFO("[FreezeWatchdog] Simulation stalled for " + FormatDuration(sinceLastChange));
+            }
+            lastState = newState;
 
             // Both directions, and only on the change. m_state is already
             // stored above, so by the time the window procedure runs it reads
@@ -166,7 +218,12 @@ void FreezeWatchdog::PollLoop() {
             CursorHook::Get().NudgeCursor();
         }
 
-        if (simStalled > windowWorstGap) { windowWorstGap = simStalled; }
+        if (newState == WatchdogState::Stalled && simStalled >= nextProgressMark) {
+            LOG_INFO("[FreezeWatchdog] Simulation still stalled - " + FormatDuration(simStalled) + " so far");
+            nextProgressMark = NextProgressMark(nextProgressMark);
+        }
+
+        if (sinceLastChange > windowWorstGap) { windowWorstGap = sinceLastChange; }
 
         if (statsSeconds > 0) {
             const DWORD elapsedMs = GetTickCount() - windowStartMs;

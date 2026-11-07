@@ -1,0 +1,9 @@
+# Store text with LF in the repository and check it out with the
+# platform's native line endings.
+* text=auto
+
+# Visual Studio and cmd.exe expect CRLF whatever platform did the checkout.
+*.sln       text eol=crlf
+*.vcxproj   text eol=crlf
+*.filters   text eol=crlf
+*.bat       text eol=crlf

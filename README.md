@@ -8,11 +8,12 @@ instead of leaving you staring at an unchanged arrow cursor with no signal
 anything is wrong.
 
 That's the entire feature. No on-screen indicator, no dialog, no settings
-panel - just the cursor swap. It was split out of [Sims3MonoModder
-(S3MM)](../Sims3MonoModder-1.2.0-beta), which has the full version of this
-feature (on-screen indicator + a 20-second "still waiting? Save / Reset"
-dialog) alongside its much larger modding toolkit. This project is for
-anyone who wants just the cursor cue without any of that.
+panel - just the cursor swap. It started as one piece of a larger
+freeze-rescue feature (an on-screen indicator plus a 20-second "still
+waiting? Save / Reset" dialog) built on top of
+[Sims3MonoModder (S3MM)](https://github.com/sims3fiend/Sims3MonoModder),
+and was split out for anyone who wants just the cursor cue without a whole
+modding toolkit.
 
 **Works on Steam, retail and EA App installs**, and runs alongside other
 mods without special handling - see [Playing well with other
@@ -81,15 +82,31 @@ CrashCapture=0
 
 ## Building from source
 
-Requires **Visual Studio 2022** and **vcpkg**.
+Requires **Visual Studio 2022** (the *Desktop development with C++*
+workload) and **[vcpkg](https://github.com/microsoft/vcpkg)**.
 
-1. Run `setup-deps.bat` once (it finds `vcpkg.exe` via `VCPKG_ROOT` or a few
+1. Run `setup-deps.bat` once. It finds `vcpkg.exe` via `VCPKG_ROOT` or a few
    common install locations, and installs the one dependency this project
    has - [Detours](https://github.com/microsoft/Detours), used only by the
-   optional fallback hook method).
-2. Open `Sims3FreezeCursor.vcxproj` in Visual Studio and build
-   (Debug or Release, Win32).
+   opt-in `HookMethod=2` prologue detour - into `vcpkg_installed\`.
+2. Open `Sims3FreezeCursor.sln` and build **Release | x86** (or Debug).
+   The game is 32-bit, so there is no x64 configuration.
 3. The built `.asi` lands in `bin\<Configuration>\Sims3FreezeCursor.asi`.
+
+### Checking a game build offline
+
+`tools/s3fc_callsites.py` (Python 3, no packages needed) answers the
+question "will the hook install on this build?" without launching the
+game. It counts how many places match the `ProcessTasks` byte pattern and
+how many `call`s reach the match - one of each means it will.
+
+```
+python tools\s3fc_callsites.py "C:\path\to\TS3W.exe"
+```
+
+It needs an unpacked executable. Steam and retail `TS3W.exe` are fine; the
+EA App's `TS3.exe` is encrypted on disk and reports zero of everything,
+which is the encryption, not a result.
 
 ## How it works, briefly
 
@@ -120,3 +137,9 @@ Thanks to **Just Harry** for suggesting the call-site hook and for pointing
 out how much a synchronous log write can cost, both of which made this
 noticeably better; and to **leonid** for the patience to test a great many
 builds on the one machine where the original bug reproduced.
+
+## License
+
+[GNU General Public License v3.0](LICENSE). Parts of `src/` are adapted
+from [Sims3MonoModder](https://github.com/sims3fiend/Sims3MonoModder),
+which is also GPL-3.0; the comments in each file say what came from where.

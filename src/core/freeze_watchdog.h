@@ -75,8 +75,8 @@ class FreezeWatchdog {
     // Polled by CursorHook. Lock-free, safe from any thread.
     WatchdogState GetState() const { return m_state.load(std::memory_order_relaxed); }
 
-    // Threshold, in seconds, matching S3MM's own indicator threshold (its
-    // design doc's brief: 1s to first show something's wrong).
+    // Threshold, in seconds. Long enough that an ordinary hitch doesn't
+    // trigger it, short enough to show up while you're still wondering.
     static constexpr double kStallThresholdSeconds = 1.0;
     static constexpr DWORD kPollIntervalMs = 150;
 

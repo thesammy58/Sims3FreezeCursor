@@ -68,7 +68,7 @@ inline bool CrashCaptureEnabled() {
 // Rewriting the call is preferred because it leaves the target function's own
 // bytes exactly as the game shipped them. A prologue detour overwrites them,
 // which is what breaks every other mod's pattern scan for the same function -
-// the coexistence problem in the design doc's section 36.
+// the coexistence problem (see COEXISTENCE in sim_heartbeat_hook.cpp).
 inline int HookMethod() {
     static const int v = ReadInt(L"HookMethod", 0);
     return v;

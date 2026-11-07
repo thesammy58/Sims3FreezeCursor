@@ -29,13 +29,16 @@
     <ClCompile Include="src\core\addresses.cpp">
       <Filter>Source Files\core</Filter>
     </ClCompile>
+    <ClCompile Include="src\core\crash_capture.cpp">
+      <Filter>Source Files\core</Filter>
+    </ClCompile>
+    <ClCompile Include="src\core\cursor_hook.cpp">
+      <Filter>Source Files\core</Filter>
+    </ClCompile>
     <ClCompile Include="src\core\freeze_watchdog.cpp">
       <Filter>Source Files\core</Filter>
     </ClCompile>
     <ClCompile Include="src\core\sim_heartbeat_hook.cpp">
-      <Filter>Source Files\core</Filter>
-    </ClCompile>
-    <ClCompile Include="src\core\cursor_hook.cpp">
       <Filter>Source Files\core</Filter>
     </ClCompile>
     <ClCompile Include="src\util\memory.cpp">
@@ -44,7 +47,15 @@
     <ClCompile Include="src\util\paths.cpp">
       <Filter>Source Files\util</Filter>
     </ClCompile>
+  </ItemGroup>
+  <ItemGroup>
     <ClInclude Include="src\core\addresses.h">
+      <Filter>Header Files\core</Filter>
+    </ClInclude>
+    <ClInclude Include="src\core\crash_capture.h">
+      <Filter>Header Files\core</Filter>
+    </ClInclude>
+    <ClInclude Include="src\core\cursor_hook.h">
       <Filter>Header Files\core</Filter>
     </ClInclude>
     <ClInclude Include="src\core\freeze_watchdog.h">
@@ -53,8 +64,11 @@
     <ClInclude Include="src\core\sim_heartbeat_hook.h">
       <Filter>Header Files\core</Filter>
     </ClInclude>
-    <ClInclude Include="src\core\cursor_hook.h">
-      <Filter>Header Files\core</Filter>
+    <ClInclude Include="src\util\config.h">
+      <Filter>Header Files\util</Filter>
+    </ClInclude>
+    <ClInclude Include="src\util\game_build.h">
+      <Filter>Header Files\util</Filter>
     </ClInclude>
     <ClInclude Include="src\util\logger.h">
       <Filter>Header Files\util</Filter>
@@ -63,6 +77,9 @@
       <Filter>Header Files\util</Filter>
     </ClInclude>
     <ClInclude Include="src\util\paths.h">
+      <Filter>Header Files\util</Filter>
+    </ClInclude>
+    <ClInclude Include="src\util\version.h">
       <Filter>Header Files\util</Filter>
     </ClInclude>
   </ItemGroup>

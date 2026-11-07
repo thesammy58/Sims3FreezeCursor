@@ -103,7 +103,7 @@ static void __fastcall DetourProcessTasksProfiled(void* pHost) {
 //
 // Two consequences beyond the saved work. Any other mod that finds this
 // function by scanning for its prologue still finds it - that is the whole
-// coexistence problem of section 36, removed at the root rather than worked
+// coexistence problem (see COEXISTENCE below), removed at the root rather than worked
 // around by waiting for the other mod to go first. And on a build where
 // patching that prologue is somehow catastrophic, this never touches it.
 //
@@ -241,7 +241,7 @@ bool Initialize() {
     //
     // There is deliberately no automatic fallback to the prologue detour. One
     // build in the wild became unplayable under it and nothing we found
-    // explains why (section 42), so falling back would mean quietly choosing a
+    // explains why, so falling back would mean quietly choosing a
     // mechanism known to have ruined someone's game, on a build nobody has
     // tested. A mod that does nothing and says so is the better failure.
     // HookMethod=2 still asks for the old method explicitly.

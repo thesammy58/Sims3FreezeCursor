@@ -46,8 +46,8 @@ ipch/
 *.ilk
 *.exe
 *.dll
-.*/
 .tmp*
+__pycache__/
 
 # vcpkg dependencies (managed by vcpkg.json)
 detours/

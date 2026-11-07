@@ -40,8 +40,8 @@ HWND FindGameWindow() {
 
 // BUSY CURSOR - TS3.exe's own embedded busy-cursor asset: RT_ANICURSOR
 // resource 103, a blue rotating spinner, confirmed by direct PE resource
-// extraction/visual inspection to be one of the game's own cursors (see the
-// project's design doc). Loaded straight from the running game process's
+// extraction/visual inspection to be one of the game's own cursors.
+// Loaded straight from the running game process's
 // own module via GetModuleHandle(nullptr) - since this mod's DLL is
 // injected into the same process as TS3.exe, this has no Mono/icall
 // dependency at all.
